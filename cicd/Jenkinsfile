@@ -7,14 +7,12 @@ pipeline {
         DOCKER_HUB = "docker.io"
         DOCKER_REGISTRY = "achodak"
         DOCKER_CREDS = credentials('docker-credentials-id')
-        KUBECONFIG = credentials('kubeconfig')
         PROJECT_NAME = "fileprocessing"
         GIT_COMMIT_SHORT = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
         TAG = "${env.BUILD_NUMBER}-${GIT_COMMIT_SHORT}"
     }
 
     stages {
-        
         stage('Build Docker Images') {
             steps {
                 container('docker') {
@@ -46,24 +44,46 @@ pipeline {
                 }
             }
         }
-        stage('Deploy to Kubernetes') {
+        
+        stage('Update Image Tags in Infrastructure Repo') {
             steps {
                 container('docker') {
                     script {
+                        // Install necessary tools
                         sh '''
-                            apk add --no-cache curl
-                            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-                            chmod +x kubectl
-                            mv kubectl /usr/local/bin/
-                            kubectl version --client
+                            apk add --no-cache git curl
+                            curl -LO "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64"
+                            chmod +x yq_linux_amd64
+                            mv yq_linux_amd64 /usr/local/bin/yq
                         '''
-                        // Apply Kubernetes manifests with variable substitution
                         
+                        // Clone the Infrastructure repository
+                        withCredentials([sshUserPrivateKey(credentialsId: 'infra-repo-key', keyFileVariable: 'SSH_KEY')]) {
+                            sh '''
+                                mkdir -p ~/.ssh
+                                ssh-keyscan github.com >> ~/.ssh/known_hosts
+                                GIT_SSH_COMMAND="ssh -i $SSH_KEY" git clone git@github.com:your-org/fileprocessing-infra.git
+                                cd fileprocessing-infra
+                                
+                                # Update image references with yq
+                                yq -i '.spec.template.spec.containers[0].image = "'${DOCKER_REGISTRY}/${PROJECT_NAME}-api:${TAG}'"' base/api.yaml
+                                yq -i '.spec.template.spec.containers[0].image = "'${DOCKER_REGISTRY}/${PROJECT_NAME}-processor:${TAG}'"' base/processor.yaml
+                                yq -i '.spec.template.spec.containers[0].image = "'${DOCKER_REGISTRY}/${PROJECT_NAME}-notifier:${TAG}'"' base/notifier.yaml
+                                
+                                # Commit and push changes
+                                git config user.email "jenkins@example.com"
+                                git config user.name "Jenkins CI"
+                                git add base/*.yaml
+                                git commit -m "Update image tags to ${TAG} [skip ci]"
+                                GIT_SSH_COMMAND="ssh -i $SSH_KEY" git push origin main
+                            '''
+                        }
                     }
                 }
             }
         }
     }
+    
     post {
         always {
             // Clean workspace
@@ -71,13 +91,11 @@ pipeline {
         }
         
         success {
-            // Notify on success
-            echo "Deployment completed successfully!"
+            echo "Build and push completed successfully!"
         }
         
         failure {
-            // Notify on failure
-            echo "Deployment failed!"
+            echo "Build and push failed!"
         }
     }
 }
