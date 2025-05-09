@@ -5,7 +5,7 @@ pipeline {
 
     environment {
         DOCKER_HUB = "docker.io"
-        DOCKER_REGISTRY = "credentials('docker-registry')"
+        DOCKER_REGISTRY = credentials('docker-registry')
         DOCKER_CREDS = credentials('docker-credentials-id')
         PROJECT_NAME = "fileprocessing"
         GIT_EMAIL = credentials('git-email')
