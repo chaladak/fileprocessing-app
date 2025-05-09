@@ -80,10 +80,10 @@ pipeline {
                             chmod 600 $SSH_KEY
                             eval "$(ssh-agent -s)"
                             ssh-add $SSH_KEY
-                            git config user.name "chaladak"
-                            git config user.email "alicja.chodak@outlook.com"
                             pwd
                             cd fileprocessing-infra/deploy/overlays/dev
+                            git config user.name "chaladak"
+                            git config user.email "alicja.chodak@outlook.com"
                             kustomize edit set image achodak/fileprocessing-api:${TAG}
                             kustomize edit set image achodak/fileprocessing-processor:${TAG}
                             kustomize edit set image achodak/fileprocessing-notifier:${TAG}
