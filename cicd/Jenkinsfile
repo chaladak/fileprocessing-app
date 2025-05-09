@@ -84,6 +84,7 @@ pipeline {
                             cd fileprocessing-infra/deploy/overlays/dev
                             git config user.name "chaladak"
                             git config user.email "alicja.chodak@outlook.com"
+                            git remote set-url origin git@github.com:chaladak/fileprocessing-infra.git
                             kustomize edit set image achodak/fileprocessing-api:${TAG}
                             kustomize edit set image achodak/fileprocessing-processor:${TAG}
                             kustomize edit set image achodak/fileprocessing-notifier:${TAG}
