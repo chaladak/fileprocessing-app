@@ -84,7 +84,7 @@ pipeline {
                         """
 
                         withCredentials([sshUserPrivateKey(credentialsId: 'infra-repo-key', keyFileVariable: 'SSH_KEY')]) {
-                        sh """
+                        sh '''
                             chmod 600 $SSH_KEY
                             eval "$(ssh-agent -s)"
                             ssh-add $SSH_KEY
@@ -93,7 +93,7 @@ pipeline {
                             git add kustomization.yaml
                             git commit -m "Update image tags to ${TAG} [skip ci]"
                             git push
-                        """
+                        '''
                         }
 
                     }
