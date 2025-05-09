@@ -75,14 +75,6 @@ pipeline {
                             ln -s /usr/local/bin/kustomize /usr/bin/kustomize
                         '''
 
-                        sh """
-                            pwd
-                            cd fileprocessing-infra/deploy/overlays/dev
-                            kustomize edit set image achodak/fileprocessing-api:${TAG}
-                            kustomize edit set image achodak/fileprocessing-processor:${TAG}
-                            kustomize edit set image achodak/fileprocessing-notifier:${TAG}
-                        """
-
                         withCredentials([sshUserPrivateKey(credentialsId: 'infra-repo-key', keyFileVariable: 'SSH_KEY')]) {
                         sh '''
                             chmod 600 $SSH_KEY
@@ -90,6 +82,11 @@ pipeline {
                             ssh-add $SSH_KEY
                             git config user.name "chaladak"
                             git config user.email "alicja.chodak@outlook.com"
+                            pwd
+                            cd fileprocessing-infra/deploy/overlays/dev
+                            kustomize edit set image achodak/fileprocessing-api:${TAG}
+                            kustomize edit set image achodak/fileprocessing-processor:${TAG}
+                            kustomize edit set image achodak/fileprocessing-notifier:${TAG}
                             git add kustomization.yaml
                             git commit -m "Update image tags to ${TAG} [skip ci]"
                             git push
