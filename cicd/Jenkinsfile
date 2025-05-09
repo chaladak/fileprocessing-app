@@ -94,6 +94,7 @@ pipeline {
                             git commit -m "Update image tags to ${TAG} [skip ci]"
                             git push
                         """
+                        }
 
                     }
                 }
