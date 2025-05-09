@@ -28,7 +28,7 @@ pipeline {
                 }
             }
         }
-        
+        /*
         stage('Push Docker Images') {
             steps {
                 container('docker') {
@@ -44,7 +44,7 @@ pipeline {
                 }
             }
         }
-
+*/
         stage('Checkout Infrastructure Repo') {
             steps {
                 container('docker') {
