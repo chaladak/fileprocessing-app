@@ -5,9 +5,11 @@ pipeline {
 
     environment {
         DOCKER_HUB = "docker.io"
-        DOCKER_REGISTRY = "achodak"
+        DOCKER_REGISTRY = credentials('docker-registry')
         DOCKER_CREDS = credentials('docker-credentials-id')
         PROJECT_NAME = "fileprocessing"
+        GIT_EMAIL = credentials('git-email')
+        GIT_NAME = credentials('git-name')
         GIT_COMMIT_SHORT = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
         TAG = "${env.BUILD_NUMBER}-${GIT_COMMIT_SHORT}"
     }
@@ -28,7 +30,7 @@ pipeline {
                 }
             }
         }
-        /*
+        
         stage('Push Docker Images') {
             steps {
                 container('docker') {
@@ -44,14 +46,13 @@ pipeline {
                 }
             }
         }
-*/
+
         stage('Checkout Infrastructure Repo') {
             steps {
                 container('docker') {
                     script {
-                        // Clone the infrastructure repository
                         sh '''
-                            git clone https://github.com/chaladak/fileprocessing-infra.git
+                            git clone git@github.com:chaladak/fileprocessing-infra.git
                         '''
                     }
                 }
@@ -62,7 +63,6 @@ pipeline {
             steps {
                 container('docker') {
                     script {
-                        // Install necessary tools
                         sh '''
                             apk add --no-cache git bash curl
                             curl -LO "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64"
@@ -80,13 +80,14 @@ pipeline {
                             chmod 600 $SSH_KEY
                             eval "$(ssh-agent -s)"
                             ssh-add $SSH_KEY
-                            cd fileprocessing-infra/deploy/overlays/dev
-                            git remote set-url origin git@github.com:chaladak/fileprocessing-infra.git
+                            cd ${PROJECT_NAME}-infra/deploy/overlays/dev
+                            git config user.name $GIT_NAME
+                            git config user.email $GIT_EMAIL
                             mkdir -p ~/.ssh
                             echo -e "Host *\n\tStrictHostKeyChecking no\n" > ~/.ssh/config
-                            kustomize edit set image achodak/fileprocessing-api:${TAG}
-                            kustomize edit set image achodak/fileprocessing-processor:${TAG}
-                            kustomize edit set image achodak/fileprocessing-notifier:${TAG}
+                            kustomize edit set image ${DOCKER_REGISTRY}/${PROJECT_NAME}-api:${TAG}
+                            kustomize edit set image ${DOCKER_REGISTRY}/${PROJECT_NAME}-processor:${TAG}
+                            kustomize edit set image ${DOCKER_REGISTRY}/${PROJECT_NAME}-notifier:${TAG}
                             git add kustomization.yaml
                             git commit -m "Update image tags to ${TAG} [skip ci]"
                             git push
