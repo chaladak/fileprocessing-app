@@ -84,7 +84,7 @@ pipeline {
 
                             git config user.name "git"
                             git config user.email "alicja.chodak@outlook.com"
-                            git add deploy/overlays/dev/kustomization.yaml
+                            git add kustomization.yaml
                             git commit -m "Update image tags to ${TAG} [skip ci]"
                             git push
                         """
