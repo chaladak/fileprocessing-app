@@ -63,11 +63,11 @@ pipeline {
                         '''
 
                         sh """
-                            kustomize edit set image achodak/fileprocessing-api:${TAG} -o deploy/overlays/dev/kustomization.yaml
-                            kustomize edit set image achodak/fileprocessing-processor:${TAG} -o deploy/overlays/dev/kustomization.yaml
-                            kustomize edit set image achodak/fileprocessing-notifier:${TAG} -o deploy/overlays/dev/kustomization.yaml
+                            kustomize edit set image achodak/fileprocessing-api:${TAG}
+                            kustomize edit set image achodak/fileprocessing-processor:${TAG}
+                            kustomize edit set image achodak/fileprocessing-notifier:${TAG}
 
-                            git config user.name "GitHub Actions"
+                            git config user.name "git"
                             git config user.email "alicja.chodak@outlook.com"
                             git add deploy/overlays/dev/kustomization.yaml
                             git commit -m "Update image tags to ${TAG} [skip ci]"
