@@ -40,6 +40,17 @@ pipeline {
                         sh "docker push ${DOCKER_REGISTRY}/${PROJECT_NAME}-api:${TAG}"
                         sh "docker push ${DOCKER_REGISTRY}/${PROJECT_NAME}-processor:${TAG}"
                         sh "docker push ${DOCKER_REGISTRY}/${PROJECT_NAME}-notifier:${TAG}"
+
+                        if (env.BRANCH_NAME == 'main') {
+                            // Tag the images with 'latest' if on main branch
+                            sh "docker tag ${DOCKER_REGISTRY}/${PROJECT_NAME}-api:${TAG} ${DOCKER_REGISTRY}/${PROJECT_NAME}-api:latest"
+                            sh "docker tag ${DOCKER_REGISTRY}/${PROJECT_NAME}-processor:${TAG} ${DOCKER_REGISTRY}/${PROJECT_NAME}-processor:latest"
+                            sh "docker tag ${DOCKER_REGISTRY}/${PROJECT_NAME}-notifier:${TAG} ${DOCKER_REGISTRY}/${PROJECT_NAME}-notifier:latest"
+                            
+                            sh "docker push ${DOCKER_REGISTRY}/${PROJECT_NAME}-api:latest"
+                            sh "docker push ${DOCKER_REGISTRY}/${PROJECT_NAME}-processor:latest"
+                            sh "docker push ${DOCKER_REGISTRY}/${PROJECT_NAME}-notifier:latest"
+                        }
                     }
                 }
             }
