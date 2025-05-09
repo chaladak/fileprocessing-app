@@ -40,19 +40,11 @@ pipeline {
                         sh "docker push ${DOCKER_REGISTRY}/${PROJECT_NAME}-api:${TAG}"
                         sh "docker push ${DOCKER_REGISTRY}/${PROJECT_NAME}-processor:${TAG}"
                         sh "docker push ${DOCKER_REGISTRY}/${PROJECT_NAME}-notifier:${TAG}"
-
-                        sh "docker tag ${DOCKER_REGISTRY}/${PROJECT_NAME}-api:${TAG} ${DOCKER_REGISTRY}/${PROJECT_NAME}-api:latest"
-                        sh "docker tag ${DOCKER_REGISTRY}/${PROJECT_NAME}-processor:${TAG} ${DOCKER_REGISTRY}/${PROJECT_NAME}-processor:latest"
-                        sh "docker tag ${DOCKER_REGISTRY}/${PROJECT_NAME}-notifier:${TAG} ${DOCKER_REGISTRY}/${PROJECT_NAME}-notifier:latest"
-                        
-                        sh "docker push ${DOCKER_REGISTRY}/${PROJECT_NAME}-api:latest"
-                        sh "docker push ${DOCKER_REGISTRY}/${PROJECT_NAME}-processor:latest"
-                        sh "docker push ${DOCKER_REGISTRY}/${PROJECT_NAME}-notifier:latest"
                     }
                 }
             }
         }
-        /*
+        
         stage('Update Image Tags in Infrastructure Repo') {
             steps {
                 container('docker') {
@@ -63,33 +55,29 @@ pipeline {
                             curl -LO "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64"
                             chmod +x yq_linux_amd64
                             mv yq_linux_amd64 /usr/local/bin/yq
+
+                            curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+                            chmod +x kustomize
+                            sudo mv kustomize /usr/local/bin/
+                            sudo ln -s /usr/local/bin/kustomize /usr/bin/kustomize
                         '''
-                        
-                        // Clone the Infrastructure repository
-                        withCredentials([sshUserPrivateKey(credentialsId: 'infra-repo-key', keyFileVariable: 'SSH_KEY')]) {
-                            sh '''
-                                mkdir -p ~/.ssh
-                                ssh-keyscan github.com >> ~/.ssh/known_hosts
-                                GIT_SSH_COMMAND="ssh -i $SSH_KEY" git clone git@github.com:chaladak/fileprocessing-infra.git
-                                cd fileprocessing-infra
-                                
-                                # Update image references with yq
-                                yq -i '.spec.template.spec.containers[0].image = "'${DOCKER_REGISTRY}/${PROJECT_NAME}-api:${TAG}'"' base/api.yaml
-                                yq -i '.spec.template.spec.containers[0].image = "'${DOCKER_REGISTRY}/${PROJECT_NAME}-processor:${TAG}'"' base/processor.yaml
-                                yq -i '.spec.template.spec.containers[0].image = "'${DOCKER_REGISTRY}/${PROJECT_NAME}-notifier:${TAG}'"' base/notifier.yaml
-                                
-                                # Commit and push changes
-                                git config user.email "alicja.chodak@outlook.com"
-                                git config user.name "Jenkins CI"
-                                git add base/*.yaml
-                                git commit -m "Update image tags to ${TAG} [skip ci]"
-                                GIT_SSH_COMMAND="ssh -i $SSH_KEY" git push origin main
-                            '''
-                        }
+
+                        sh """
+                            kustomize edit set image achodak/fileprocessing-api:${TAG} -o deploy/overlays/dev/kustomization.yaml
+                            kustomize edit set image achodak/fileprocessing-processor:${TAG} -o deploy/overlays/dev/kustomization.yaml
+                            kustomize edit set image achodak/fileprocessing-notifier:${TAG} -o deploy/overlays/dev/kustomization.yaml
+
+                            git config user.name "GitHub Actions"
+                            git config user.email "alicja.chodak@outlook.com"
+                            git add deploy/overlays/dev/kustomization.yaml
+                            git commit -m "Update image tags to ${TAG} [skip ci]"
+                            git push
+                        """
+
                     }
                 }
             }
-        }*/
+        }
     }
     
     post {
