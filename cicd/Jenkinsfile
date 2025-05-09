@@ -5,7 +5,7 @@ pipeline {
 
     environment {
         DOCKER_HUB = "docker.io"
-        DOCKER_REGISTRY = "achodak"
+        DOCKER_REGISTRY = "credentials('docker-registry')"
         DOCKER_CREDS = credentials('docker-credentials-id')
         PROJECT_NAME = "fileprocessing"
         GIT_EMAIL = credentials('git-email')
@@ -52,7 +52,7 @@ pipeline {
                 container('docker') {
                     script {
                         sh '''
-                            git clone git@github.com:chaladak/fileprocessing-infra.git
+                            git clone https://github.com/chaladak/fileprocessing-infra.git
                         '''
                     }
                 }
@@ -83,6 +83,7 @@ pipeline {
                             cd ${PROJECT_NAME}-infra/deploy/overlays/dev
                             git config user.name ${GIT_NAME}
                             git config user.email ${GIT_EMAIL}
+                            git remote set-url origin git@github.com:chaladak/fileprocessing-infra.git
                             mkdir -p ~/.ssh
                             echo -e "Host *\n\tStrictHostKeyChecking no\n" > ~/.ssh/config
                             kustomize edit set image ${DOCKER_REGISTRY}/${PROJECT_NAME}-api:${TAG}
