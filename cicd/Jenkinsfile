@@ -51,7 +51,7 @@ pipeline {
                     script {
                         // Install necessary tools
                         sh '''
-                            apk add --no-cache git curl
+                            apk add --no-cache git bash curl
                             curl -LO "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64"
                             chmod +x yq_linux_amd64
                             mv yq_linux_amd64 /usr/local/bin/yq
