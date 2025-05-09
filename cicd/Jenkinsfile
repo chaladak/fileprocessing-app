@@ -55,7 +55,7 @@ pipeline {
                 }
             }
         }
-        
+        /*
         stage('Update Image Tags in Infrastructure Repo') {
             steps {
                 container('docker') {
@@ -73,7 +73,7 @@ pipeline {
                             sh '''
                                 mkdir -p ~/.ssh
                                 ssh-keyscan github.com >> ~/.ssh/known_hosts
-                                GIT_SSH_COMMAND="ssh -i $SSH_KEY" git clone git@github.com:your-org/fileprocessing-infra.git
+                                GIT_SSH_COMMAND="ssh -i $SSH_KEY" git clone git@github.com:chaladak/fileprocessing-infra.git
                                 cd fileprocessing-infra
                                 
                                 # Update image references with yq
@@ -82,7 +82,7 @@ pipeline {
                                 yq -i '.spec.template.spec.containers[0].image = "'${DOCKER_REGISTRY}/${PROJECT_NAME}-notifier:${TAG}'"' base/notifier.yaml
                                 
                                 # Commit and push changes
-                                git config user.email "jenkins@example.com"
+                                git config user.email "alicja.chodak@outlook.com"
                                 git config user.name "Jenkins CI"
                                 git add base/*.yaml
                                 git commit -m "Update image tags to ${TAG} [skip ci]"
@@ -92,7 +92,7 @@ pipeline {
                     }
                 }
             }
-        }
+        }*/
     }
     
     post {
