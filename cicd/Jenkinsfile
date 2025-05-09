@@ -44,6 +44,19 @@ pipeline {
                 }
             }
         }
+
+        stage('Checkout Infrastructure Repo') {
+            steps {
+                container('docker') {
+                    script {
+                        // Clone the infrastructure repository
+                        sh '''
+                            git clone https://github.com/chaladak/fileprocessing-infra.git
+                        '''
+                    }
+                }
+            }
+        }
         
         stage('Update Image Tags in Infrastructure Repo') {
             steps {
@@ -63,6 +76,8 @@ pipeline {
                         '''
 
                         sh """
+                            pwd
+                            cd fileprocessing-infra/deploy/overlays/dev
                             kustomize edit set image achodak/fileprocessing-api:${TAG}
                             kustomize edit set image achodak/fileprocessing-processor:${TAG}
                             kustomize edit set image achodak/fileprocessing-notifier:${TAG}
