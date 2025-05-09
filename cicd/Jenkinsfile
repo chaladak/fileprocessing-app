@@ -81,8 +81,8 @@ pipeline {
                             eval "$(ssh-agent -s)"
                             ssh-add $SSH_KEY
                             cd ${PROJECT_NAME}-infra/deploy/overlays/dev
-                            git config user.name $GIT_NAME
-                            git config user.email $GIT_EMAIL
+                            git config user.name ${GIT_NAME}
+                            git config user.email ${GIT_EMAIL}
                             mkdir -p ~/.ssh
                             echo -e "Host *\n\tStrictHostKeyChecking no\n" > ~/.ssh/config
                             kustomize edit set image ${DOCKER_REGISTRY}/${PROJECT_NAME}-api:${TAG}
