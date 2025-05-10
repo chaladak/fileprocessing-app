@@ -14,11 +14,44 @@ from models import Base, FileRecord
 app = FastAPI(title="File Processing API")
 
 # Database setup
-DATABASE_URL = os.environ.get("DATABASE_URL")
-engine = create_engine(DATABASE_URL)
+POSTGRES_USER = os.getenv("POSTGRES_USER")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
+POSTGRES_HOST = os.getenv("POSTGRES_HOST")
+POSTGRES_DB = os.getenv("POSTGRES_DB")
+
+# Log environment variables for debugging
+print(f"POSTGRES_USER: {POSTGRES_USER}")
+print(f"POSTGRES_PASSWORD: {POSTGRES_PASSWORD}")
+print(f"POSTGRES_HOST: {POSTGRES_HOST}")
+print(f"POSTGRES_DB: {POSTGRES_DB}")
+
+# Validate environment variables
+if not all([POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_DB]):
+    missing = [k for k, v in {
+        "POSTGRES_USER": POSTGRES_USER,
+        "POSTGRES_PASSWORD": POSTGRES_PASSWORD,
+        "POSTGRES_HOST": POSTGRES_HOST,
+        "POSTGRES_DB": POSTGRES_DB
+    }.items() if not v]
+    raise EnvironmentError(f"Missing environment variables: {missing}")
+
+# Construct DATABASE_URL
+DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:5432/{POSTGRES_DB}"
+
+# Log DATABASE_URL for debugging
+print(f"DATABASE_URL: {DATABASE_URL}")
+
+# Create engine and session
+try:
+    engine = create_engine(DATABASE_URL)
+    print("Database engine created successfully")
+except Exception as e:
+    print(f"Failed to create database engine: {e}")
+    raise
+
+Base = declarative_base()
 Base.metadata.create_all(engine)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 # S3 setup
 s3_client = boto3.client(
     's3',
