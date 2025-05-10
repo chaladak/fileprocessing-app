@@ -95,41 +95,26 @@ NFS_PATH = os.environ.get("NFS_PATH")
 async def upload_file(file: UploadFile, background_tasks: BackgroundTasks):
     job_id = str(uuid.uuid4())
     temp_file_path = f"/tmp/{job_id}_{file.filename}"
+    
     with open(temp_file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
-    s3_key = f"{job_id}/{file.filename}"
-    s3_client.upload_file(temp_file_path, BUCKET_NAME, s3_key)
-    nfs_file_path = f"{NFS_PATH}/{job_id}_{file.filename}"
+    
+    nfs_file_path = f"/mnt/nfs_clientshare/{job_id}_{file.filename}"
     shutil.copy(temp_file_path, nfs_file_path)
 
     db = SessionLocal()
     file_record = FileRecord(
         id=job_id,
         filename=file.filename,
-        s3_path=s3_key,
+        s3_path=temp_file_path,
         nfs_path=nfs_file_path,
         status="uploaded",
         uploaded_at=datetime.now()
     )
+    
     db.add(file_record)
     db.commit()
     db.close()
-
-    connection = get_rabbitmq_connection()
-    channel = connection.channel()
-    channel.queue_declare(queue='file_processing')
-    message = {
-        "job_id": job_id,
-        "filename": file.filename,
-        "s3_path": s3_key,
-        "nfs_path": nfs_file_path
-    }
-    channel.basic_publish(
-        exchange='',
-        routing_key='file_processing',
-        body=json.dumps(message)
-    )
-    connection.close()
 
     os.remove(temp_file_path)
 
