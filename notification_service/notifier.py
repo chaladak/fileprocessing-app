@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Read RabbitMQ host and port from the environment variables
-rabbitmq_url = os.getenv("RABBITMQ_URL")
+rabbitmq_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
 
 # Database setup (use DATABASE_URL from environment variable)
 DATABASE_URL = os.getenv("DATABASE_URL")
