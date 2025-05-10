@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, DateTime, Text
-from app import Base  # Import Base from app.py
+from database import Base  # Import Base from database.py
 
 class FileRecord(Base):
     __tablename__ = "file_records"
