@@ -44,32 +44,9 @@ class Notification(Base):
     sent_at = Column(DateTime, nullable=False)
     details = Column(Text, nullable=True)
 
-# RabbitMQ connection and retry logic
-def wait_for_rabbitmq():
-    rabbitmq_api_url = "http://rabbitmq:15672/api/healthchecks/node"
-    rabbitmq_user = "guest"
-    rabbitmq_pass = "guest"
-    retry_count = 0
-    max_retries = 30
-
-    while retry_count < max_retries:
-        try:
-            response = requests.get(rabbitmq_api_url, auth=(rabbitmq_user, rabbitmq_pass), timeout=5)
-            logger.info(f"RabbitMQ response: {response.status_code} - {response.text}")
-            if response.status_code == 200 and response.json().get("status") == "ok":
-                logger.info("RabbitMQ is ready.")
-                return True
-        except requests.RequestException as e:
-            logger.error(f"RabbitMQ connection failed: {str(e)}")
-            logger.info(f"Waiting for RabbitMQ... Attempt {retry_count + 1}/{max_retries}")
-            retry_count += 1
-            time.sleep(2)
-
-    raise Exception("RabbitMQ did not become ready in time.")
 
 def get_rabbitmq_connection():
     """Ensure RabbitMQ is ready before attempting to connect."""
-    wait_for_rabbitmq()
 
     retry_count = 0
     max_retries = 30
