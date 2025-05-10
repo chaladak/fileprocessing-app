@@ -51,8 +51,20 @@ except Exception as e:
     raise
 
 Base = declarative_base()
-Base.metadata.create_all(engine)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# Function to create tables
+def initialize_database():
+    try:
+        print("Creating tables...")
+        Base.metadata.create_all(engine)
+        print("Tables created successfully")
+    except Exception as e:
+        print(f"Error creating tables: {e}")
+
+# Initialize database tables
+initialize_database()
+
 # S3 setup
 s3_client = boto3.client(
     's3',
@@ -81,23 +93,15 @@ NFS_PATH = os.environ.get("NFS_PATH")
 
 @app.post("/upload/")
 async def upload_file(file: UploadFile, background_tasks: BackgroundTasks):
-    # Create a unique ID for this file processing job
     job_id = str(uuid.uuid4())
-    
-    # Save the file temporarily
     temp_file_path = f"/tmp/{job_id}_{file.filename}"
     with open(temp_file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
-    
-    # Upload to S3
     s3_key = f"{job_id}/{file.filename}"
     s3_client.upload_file(temp_file_path, BUCKET_NAME, s3_key)
-    
-    # Save to NFS
     nfs_file_path = f"{NFS_PATH}/{job_id}_{file.filename}"
     shutil.copy(temp_file_path, nfs_file_path)
-    
-    # Record in database
+
     db = SessionLocal()
     file_record = FileRecord(
         id=job_id,
@@ -110,15 +114,10 @@ async def upload_file(file: UploadFile, background_tasks: BackgroundTasks):
     db.add(file_record)
     db.commit()
     db.close()
-    
-    # Send message to RabbitMQ for processing
+
     connection = get_rabbitmq_connection()
     channel = connection.channel()
-    
-    # Ensure queue exists
     channel.queue_declare(queue='file_processing')
-    
-    # Publish message
     message = {
         "job_id": job_id,
         "filename": file.filename,
@@ -131,10 +130,9 @@ async def upload_file(file: UploadFile, background_tasks: BackgroundTasks):
         body=json.dumps(message)
     )
     connection.close()
-    
-    # Clean up temporary file
+
     os.remove(temp_file_path)
-    
+
     return {"job_id": job_id, "status": "processing"}
 
 @app.get("/status/{job_id}")
@@ -144,7 +142,7 @@ async def get_status(job_id: str):
     if not file_record:
         db.close()
         raise HTTPException(status_code=404, detail="Job not found")
-    
+
     result = {
         "job_id": file_record.id,
         "filename": file_record.filename,
@@ -158,21 +156,3 @@ async def get_status(job_id: str):
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
-
-# File: api_service/models.py
-from sqlalchemy import Column, String, DateTime, Text
-from sqlalchemy.ext.declarative import declarative_base
-
-Base = declarative_base()
-
-class FileRecord(Base):
-    __tablename__ = "file_records"
-    
-    id = Column(String, primary_key=True)
-    filename = Column(String, nullable=False)
-    s3_path = Column(String, nullable=False)
-    nfs_path = Column(String, nullable=False)
-    status = Column(String, nullable=False)
-    uploaded_at = Column(DateTime, nullable=False)
-    processed_at = Column(DateTime, nullable=True)
-    processing_result = Column(Text, nullable=True)
