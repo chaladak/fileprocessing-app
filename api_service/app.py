@@ -77,7 +77,7 @@ def get_rabbitmq_connection():
     return connection
 
 # NFS path
-NFS_PATH = os.environ.get("NFS_MOUNT_PATH")
+NFS_PATH = os.environ.get("NFS_PATH")
 
 @app.post("/upload/")
 async def upload_file(file: UploadFile, background_tasks: BackgroundTasks):
