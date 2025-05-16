@@ -140,8 +140,18 @@ def process_uploaded_file(job_id: str, filename: str, temp_file_path: str, nfs_f
             connection = get_rabbitmq_connection()
             channel = connection.channel()
             
-            # Ensure queue exists
-            channel.queue_declare(queue='file_processing', durable=True)
+            # Ensure queue exists - passive=True to check if it exists without trying to change its properties
+            try:
+                channel.queue_declare(queue='file_processing', passive=True)
+                logger.info("Queue 'file_processing' already exists")
+            except pika.exceptions.ChannelClosedByBroker:
+                # Reconnect if channel closed
+                connection = get_rabbitmq_connection()
+                channel = connection.channel()
+                
+                # Create queue if it doesn't exist
+                logger.info("Creating queue 'file_processing' with durable=True")
+                channel.queue_declare(queue='file_processing', durable=True)
             
             # Prepare message
             message = {
