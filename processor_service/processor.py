@@ -113,7 +113,7 @@ def compute_file_hash(nfs_path):
 
 def process_file(nfs_path, job_id):
     """
-    Process file and send result to RabbitMQ with improved error handling.
+    Process file and send result to RabbitMQ with improved error handling. 
     """
     try:
         # Check the path as received, log the path for better debugging
