@@ -209,9 +209,14 @@ async def upload_file(file: UploadFile, background_tasks: BackgroundTasks):
         logger.info(f"File saved to temp location: {temp_file_path}")
         
         # Copy to NFS
-        nfs_file_path = f"/mnt/nfs_clientshare/{job_id}_{file.filename}"
+        nfs_file_path = f"{NFS_PATH}/{job_id}_{file.filename}"
         shutil.copy(temp_file_path, nfs_file_path)
         logger.info(f"File copied to NFS: {nfs_file_path}")
+
+        if os.path.exists(nfs_file_path):
+            logger.info(f"File successfully written to NFS path: {nfs_file_path}")
+        else:
+            logger.warning(f"File not found in NFS path before RabbitMQ publish: {nfs_file_path}")
 
         # Create database record
         db = SessionLocal()

@@ -116,8 +116,10 @@ def process_file(nfs_path, job_id):
     Process file and send result to RabbitMQ with improved error handling.
     """
     try:
+        # Check the path as received, log the path for better debugging
+        logger.info(f"Checking NFS path for job {job_id}: {nfs_path}")
         if not os.path.exists(nfs_path):
-            logger.error(f"File not found: {nfs_path}")
+            logger.error(f"NFS path not found: {nfs_path}")
             raise FileNotFoundError(f"File {nfs_path} does not exist")
         
         # Instead of sleeping, compute file hash
