@@ -122,60 +122,66 @@ def wait_for_file(nfs_path, retries=5, delay=1):
     logger.error(f"File {nfs_path} not found after {retries} retries.")
     return False
 
-# Process file function with NFS wait
-# Process file function with NFS wait and RabbitMQ notification
-def process_file(nfs_path, job_id):
+def process_file(message):
+    job_id = message["job_id"]
+    filename = message["filename"]
+    nfs_path = message["nfs_path"]
+    
     try:
-        if not wait_for_file(nfs_path):
-            raise FileNotFoundError(f"File {nfs_path} does not exist")
-
-        file_hash = hashlib.sha256()
+        # Simulate file processing
+        logger.info(f"Processing file for job {job_id}")
+        # Example processing logic (e.g., calculate file size and hash)
+        import hashlib
         with open(nfs_path, "rb") as f:
-            while chunk := f.read(8192):
-                file_hash.update(chunk)
-
+            file_content = f.read()
+            file_hash = hashlib.sha256(file_content).hexdigest()
         result = {
-            "size_bytes": os.path.getsize(nfs_path),
+            "size_bytes": len(file_content),
             "processed_timestamp": datetime.now().isoformat(),
-            "file_hash": file_hash.hexdigest(),
+            "file_hash": file_hash,
             "success": True
         }
 
-        with SessionLocal() as db:
-            file_record = db.query(FileRecord).filter(FileRecord.id == job_id).first()
-            if file_record:
-                file_record.status = "processed"
-                file_record.processed_at = datetime.now()
-                file_record.processing_result = json.dumps(result)
-                db.commit()
+        # Update FileRecord in database
+        db = SessionLocal()
+        file_record = db.query(FileRecord).filter(FileRecord.id == job_id).first()
+        if file_record:
+            file_record.status = "processed"
+            file_record.processed_at = datetime.now()
+            file_record.processing_result = json.dumps(result)
+            db.commit()
+            logger.info(f"Updated FileRecord for job {job_id} to status: processed")
+        else:
+            logger.error(f"FileRecord not found for job {job_id}")
+            raise Exception("FileRecord not found")
+        db.close()
 
-        logger.info(f"File {job_id} processed successfully.")
+        # Send notification to RabbitMQ
+        connection = get_rabbitmq_connection()
+        channel = connection.channel()
+        channel.queue_declare(queue="notifications")
+        notification_message = {
+            "job_id": job_id,
+            "status": "processed",
+            "result": result
+        }
+        channel.basic_publish(
+            exchange="",
+            routing_key="notifications",
+            body=json.dumps(notification_message),
+            properties=pika.BasicProperties(delivery_mode=2)
+        )
+        logger.info(f"Sent notification for job {job_id}")
+        connection.close()
 
     except Exception as e:
-        logger.error(f"File processing failed for job {job_id}: {e}")
-        raise
-
-    # Send RabbitMQ notification
-    try:
-        connection = get_rabbitmq_connection()
-        try:
-            channel = connection.channel()
-            channel.queue_declare(queue='notifications', durable=False)
-            notification = {
-                "job_id": job_id,
-                "status": "processed",
-                "result": result
-            }
-            channel.basic_publish(
-                exchange='',
-                routing_key='notifications',
-                body=json.dumps(notification)
-            )
-            logger.info(f"Notification sent for job {job_id}")
-        finally:
-            connection.close()
-    except Exception as notification_error:
-        logger.error(f"Notification error for job {job_id}: {notification_error}")
+        logger.error(f"Error processing job {job_id}: {str(e)}")
+        db = SessionLocal()
+        file_record = db.query(FileRecord).filter(FileRecord.id == job_id).first()
+        if file_record:
+            file_record.status = "error"
+            db.commit()
+        db.close()
         raise
 
 def callback(ch, method, properties, body):
