@@ -127,10 +127,9 @@ def process_file(message):
     filename = message["filename"]
     nfs_path = message["nfs_path"]
     
+    logger.info(f"Processing file for job {job_id}")
     try:
-        # Simulate file processing
-        logger.info(f"Processing file for job {job_id}")
-        # Example processing logic (e.g., calculate file size and hash)
+        # Simulate file processing (e.g., calculate file size and hash)
         import hashlib
         with open(nfs_path, "rb") as f:
             file_content = f.read()
@@ -159,7 +158,7 @@ def process_file(message):
         # Send notification to RabbitMQ
         connection = get_rabbitmq_connection()
         channel = connection.channel()
-        channel.queue_declare(queue="notifications")
+        channel.queue_declare(queue="notifications", durable=True)
         notification_message = {
             "job_id": job_id,
             "status": "processed",
@@ -185,39 +184,13 @@ def process_file(message):
         raise
 
 def callback(ch, method, properties, body):
-    """
-    Improved callback with robust error handling and connection management
-    """
     try:
         message = json.loads(body)
-        job_id = message["job_id"]
-        nfs_path = message["nfs_path"]
-
-        logger.info(f"Received processing job for {job_id}")
-
-        try:
-            process_file(nfs_path, job_id)
-            
-            # Safe acknowledgment
-            if ch.is_open:
-                ch.basic_ack(delivery_tag=method.delivery_tag)
-            else:
-                logger.warning(f"Channel closed during ack for job {job_id}")
-        
-        except Exception as processing_error:
-            logger.error(f"Processing error for job {job_id}: {processing_error}")
-            
-            # Safe negative acknowledgment
-            try:
-                if ch.is_open:
-                    ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
-                else:
-                    logger.warning(f"Channel closed during nack for job {job_id}")
-            except Exception as ack_error:
-                logger.error(f"Failed to nack job {job_id}: {ack_error}")
-
-    except Exception as callback_error:
-        logger.error(f"Callback processing error: {callback_error}")
+        process_file(message)
+        ch.basic_ack(delivery_tag=method.delivery_tag)
+    except Exception as e:
+        logger.error(f"Processing error for job {message.get('job_id', 'unknown')}: {str(e)}")
+        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
 def main():
     logger.info("File processor service starting...")
