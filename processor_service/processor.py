@@ -111,68 +111,71 @@ def compute_file_hash(nfs_path):
             hasher.update(chunk)
     return hasher.hexdigest()
 
+# Function to wait for NFS file availability
+def wait_for_file(nfs_path, retries=5, delay=1):
+    for attempt in range(retries):
+        if os.path.exists(nfs_path):
+            logger.info(f"File {nfs_path} is accessible after {attempt + 1} checks.")
+            return True
+        logger.warning(f"File {nfs_path} not found, retrying in {delay} seconds (Attempt {attempt + 1}/{retries})...")
+        time.sleep(delay)
+    logger.error(f"File {nfs_path} not found after {retries} retries.")
+    return False
+
+# Process file function with NFS wait
+# Process file function with NFS wait and RabbitMQ notification
 def process_file(nfs_path, job_id):
-    """
-    Process file and send result to RabbitMQ with improved error handling. 
-    """
     try:
-        # Check the path as received, log the path for better debugging
-        logger.info(f"Checking NFS path for job {job_id}: {nfs_path}")
-        if not os.path.exists(nfs_path):
-            logger.error(f"NFS path not found: {nfs_path}")
+        if not wait_for_file(nfs_path):
             raise FileNotFoundError(f"File {nfs_path} does not exist")
-        
-        # Instead of sleeping, compute file hash
-        file_hash = compute_file_hash(nfs_path)
-        
+
+        file_hash = hashlib.sha256()
+        with open(nfs_path, "rb") as f:
+            while chunk := f.read(8192):
+                file_hash.update(chunk)
+
         result = {
             "size_bytes": os.path.getsize(nfs_path),
             "processed_timestamp": datetime.now().isoformat(),
-            "file_hash": file_hash,
+            "file_hash": file_hash.hexdigest(),
             "success": True
         }
-        
-        # Database update
-        try:
-            with SessionLocal() as db:
-                file_record = db.query(FileRecord).filter(FileRecord.id == job_id).first()
-                if file_record:
-                    file_record.status = "processed"
-                    file_record.processed_at = datetime.now()
-                    file_record.processing_result = json.dumps(result)
-                    db.commit()
-                    logger.info(f"Database updated: File {job_id} processed")
-        except Exception as db_error:
-            logger.error(f"Database update error for job {job_id}: {db_error}")
-            raise
-        
-        # RabbitMQ notification
-        try:
-            connection = get_rabbitmq_connection()
-            try:
-                channel = connection.channel()
-                channel.queue_declare(queue='notifications', durable=False)
-                
-                notification = {
-                    "job_id": job_id,
-                    "status": "processed",
-                    "result": result
-                }
-                
-                channel.basic_publish(
-                    exchange='',
-                    routing_key='notifications',
-                    body=json.dumps(notification)
-                )
-                logger.info(f"Notification sent for job {job_id}")
-            finally:
-                connection.close()
-        except Exception as notification_error:
-            logger.error(f"Notification error for job {job_id}: {notification_error}")
-            raise
-    
+
+        with SessionLocal() as db:
+            file_record = db.query(FileRecord).filter(FileRecord.id == job_id).first()
+            if file_record:
+                file_record.status = "processed"
+                file_record.processed_at = datetime.now()
+                file_record.processing_result = json.dumps(result)
+                db.commit()
+
+        logger.info(f"File {job_id} processed successfully.")
+
     except Exception as e:
         logger.error(f"File processing failed for job {job_id}: {e}")
+        raise
+
+    # Send RabbitMQ notification
+    try:
+        connection = get_rabbitmq_connection()
+        try:
+            channel = connection.channel()
+            channel.queue_declare(queue='notifications', durable=False)
+            notification = {
+                "job_id": job_id,
+                "status": "processed",
+                "result": result
+            }
+            channel.basic_publish(
+                exchange='',
+                routing_key='notifications',
+                body=json.dumps(notification)
+            )
+            logger.info(f"Notification sent for job {job_id}")
+        finally:
+            connection.close()
+    except Exception as notification_error:
+        logger.error(f"Notification error for job {job_id}: {notification_error}")
         raise
 
 def callback(ch, method, properties, body):
