@@ -64,7 +64,7 @@ s3_client = boto3.client(
 BUCKET_NAME = "file-processing"
 
 # NFS path
-NFS_PATH = os.environ.get("NFS_MOUNT_PATH", "/app/data")
+NFS_PATH = os.environ.get("NFS_PATH", "/mnt/nfs_clientshare")
 
 # Construct RabbitMQ URL from environment variables if not directly provided
 def get_rabbitmq_url():
