@@ -33,7 +33,7 @@ class FileRecord(Base):
     processing_result = Column(Text, nullable=True)
 
 # Database setup
-DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///default.db")
+DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
     # Construct DATABASE_URL from individual parts if not provided
     pg_user = os.environ.get("POSTGRES_USER")
