@@ -2,7 +2,7 @@ name: Build and Deploy File Processing Services
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main ]
   pull_request:
     branches: [ main ]
 
@@ -73,17 +73,11 @@ jobs:
     - name: Update Image Tags in Infrastructure Repo
       run: |
         cd fileprocessing-infra/deploy/overlays/dev
-        
-        # Configure git
         git config user.name "${{ secrets.GIT_NAME }}"
         git config user.email "${{ secrets.GIT_EMAIL }}"
-        
-        # Update kustomization with new image tags
         kustomize edit set image ${{ env.DOCKER_USERNAME }}/${{ env.PROJECT_NAME }}-api:${{ steps.meta.outputs.tag }}
         kustomize edit set image ${{ env.DOCKER_USERNAME }}/${{ env.PROJECT_NAME }}-processor:${{ steps.meta.outputs.tag }}
         kustomize edit set image ${{ env.DOCKER_USERNAME }}/${{ env.PROJECT_NAME }}-notifier:${{ steps.meta.outputs.tag }}
-        
-        # Commit and push changes
         git add kustomization.yaml
-        git commit -m "Update image tags to ${{ steps.meta.outputs.tag }} [skip ci]" || exit 0
+        git commit -m "Update image tags to ${{ steps.meta.outputs.tag }}" || exit 0
         git push
