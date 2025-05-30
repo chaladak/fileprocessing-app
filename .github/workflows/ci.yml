@@ -2,7 +2,7 @@ name: Build and Deploy File Processing Services
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, develop ]
   pull_request:
     branches: [ main ]
 
@@ -10,6 +10,7 @@ env:
   DOCKER_HUB: docker.io
   PROJECT_NAME: fileprocessing
   REGISTRY: docker.io
+  DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
 
 jobs:
   build-and-deploy:
@@ -41,15 +42,15 @@ jobs:
 
     - name: Build Docker Images
       run: |
-        docker build --network=host -t ${{ env.REGISTRY }}/${{ env.PROJECT_NAME }}-api:${{ steps.meta.outputs.tag }} ./api_service
-        docker build --network=host -t ${{ env.REGISTRY }}/${{ env.PROJECT_NAME }}-processor:${{ steps.meta.outputs.tag }} ./processor_service
-        docker build --network=host -t ${{ env.REGISTRY }}/${{ env.PROJECT_NAME }}-notifier:${{ steps.meta.outputs.tag }} ./notification_service
+        docker build --network=host -t ${{ env.DOCKER_USERNAME }}/${{ env.PROJECT_NAME }}-api:${{ steps.meta.outputs.tag }} ./api_service
+        docker build --network=host -t ${{ env.DOCKER_USERNAME }}/${{ env.PROJECT_NAME }}-processor:${{ steps.meta.outputs.tag }} ./processor_service
+        docker build --network=host -t ${{ env.DOCKER_USERNAME }}/${{ env.PROJECT_NAME }}-notifier:${{ steps.meta.outputs.tag }} ./notification_service
 
     - name: Push Docker Images
       run: |
-        docker push ${{ env.REGISTRY }}/${{ env.PROJECT_NAME }}-api:${{ steps.meta.outputs.tag }}
-        docker push ${{ env.REGISTRY }}/${{ env.PROJECT_NAME }}-processor:${{ steps.meta.outputs.tag }}
-        docker push ${{ env.REGISTRY }}/${{ env.PROJECT_NAME }}-notifier:${{ steps.meta.outputs.tag }}
+        docker push ${{ env.DOCKER_USERNAME }}/${{ env.PROJECT_NAME }}-api:${{ steps.meta.outputs.tag }}
+        docker push ${{ env.DOCKER_USERNAME }}/${{ env.PROJECT_NAME }}-processor:${{ steps.meta.outputs.tag }}
+        docker push ${{ env.DOCKER_USERNAME }}/${{ env.PROJECT_NAME }}-notifier:${{ steps.meta.outputs.tag }}
 
     - name: Checkout Infrastructure Repo
       uses: actions/checkout@v4
@@ -61,19 +62,28 @@ jobs:
 
     - name: Install tools
       run: |
+        # Install yq
         sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
         sudo chmod +x /usr/local/bin/yq
+        
+        # Install kustomize
         curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
         sudo mv kustomize /usr/local/bin/
 
     - name: Update Image Tags in Infrastructure Repo
       run: |
         cd fileprocessing-infra/deploy/overlays/dev
+        
+        # Configure git
         git config user.name "${{ secrets.GIT_NAME }}"
         git config user.email "${{ secrets.GIT_EMAIL }}"
-        kustomize edit set image ${{ env.REGISTRY }}/${{ env.PROJECT_NAME }}-api:${{ steps.meta.outputs.tag }}
-        kustomize edit set image ${{ env.REGISTRY }}/${{ env.PROJECT_NAME }}-processor:${{ steps.meta.outputs.tag }}
-        kustomize edit set image ${{ env.REGISTRY }}/${{ env.PROJECT_NAME }}-notifier:${{ steps.meta.outputs.tag }}
+        
+        # Update kustomization with new image tags
+        kustomize edit set image ${{ env.DOCKER_USERNAME }}/${{ env.PROJECT_NAME }}-api:${{ steps.meta.outputs.tag }}
+        kustomize edit set image ${{ env.DOCKER_USERNAME }}/${{ env.PROJECT_NAME }}-processor:${{ steps.meta.outputs.tag }}
+        kustomize edit set image ${{ env.DOCKER_USERNAME }}/${{ env.PROJECT_NAME }}-notifier:${{ steps.meta.outputs.tag }}
+        
+        # Commit and push changes
         git add kustomization.yaml
         git commit -m "Update image tags to ${{ steps.meta.outputs.tag }} [skip ci]" || exit 0
         git push
