@@ -39,7 +39,6 @@ class Notification(Base):
 def get_rabbitmq_url():
     rabbitmq_url = os.environ.get("RABBITMQ_URL")
     if not rabbitmq_url:
-        # Build it from individual environment variables
         rabbitmq_host = os.environ.get("RABBITMQ_HOST", "rabbitmq-service")
         rabbitmq_user = os.environ.get("RABBITMQ_USER", "guest")
         rabbitmq_pass = os.environ.get("RABBITMQ_PASSWORD", "guest")
@@ -51,7 +50,6 @@ def get_rabbitmq_url():
 def get_database_url():
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
-        # Build it from individual environment variables
         pg_user = os.environ.get("POSTGRES_USER")
         pg_pass = os.environ.get("POSTGRES_PASSWORD")
         pg_host = os.environ.get("POSTGRES_HOST")
@@ -95,9 +93,7 @@ def send_notification(job_id, status, result):
     """
     logger.info(f"Sending notification for job {job_id} with status {status}")
     
-    # Simulate HTTP webhook call (for demonstration purposes)
     try:
-        # Placeholder for actual HTTP webhook logic
         logger.info(f"NOTIFICATION: Job {job_id} - Status: {status} - Result: {result}")
         
         # Save notification to the database
