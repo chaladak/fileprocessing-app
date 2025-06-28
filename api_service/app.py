@@ -13,7 +13,6 @@ from datetime import datetime
 from database import Base
 from models import FileRecord
 
-# Set up logging
 logging.basicConfig(
     level=logging.INFO, 
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
