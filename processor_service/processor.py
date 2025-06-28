@@ -129,7 +129,7 @@ def process_file(message):
     
     logger.info(f"Processing file for job {job_id}")
     try:
-        # Simulate file processing (e.g., calculate file size and hash)
+        # Simulate file processing
         import hashlib
         with open(nfs_path, "rb") as f:
             file_content = f.read()
