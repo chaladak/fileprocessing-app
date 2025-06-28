@@ -133,7 +133,7 @@ def callback(ch, method, properties, body):
 def main():
     logger.info("Notification service starting...")
     
-    connection = get_rabbitmq_connection()  # Establish the connection after ensuring RabbitMQ is ready
+    connection = get_rabbitmq_connection()
     
     channel = connection.channel()
     channel.queue_declare(queue='notifications')
