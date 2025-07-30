@@ -179,7 +179,7 @@ def process_file(message):
         # Send notification to RabbitMQ
         connection = get_rabbitmq_connection()
         channel = connection.channel()
-        channel.queue_declare(queue="notifications", durable=True)
+        channel.queue_declare(queue="notifications")
         notification_message = {
             "job_id": job_id,
             "status": "processed",
@@ -232,7 +232,7 @@ def main():
         connection = get_rabbitmq_connection()
         channel = connection.channel()
 
-        channel.queue_declare(queue='file_processing', durable=True)
+        channel.queue_declare(queue='file_processing')
         channel.basic_qos(prefetch_count=1)
 
         channel.basic_consume(
