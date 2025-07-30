@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, DateTime, Text
-from api_service.database import Base
+from database import Base
 from datetime import datetime
 
 class FileRecord(Base):
