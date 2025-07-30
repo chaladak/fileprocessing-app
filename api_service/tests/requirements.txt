@@ -3,3 +3,4 @@ pytest-mock>=3.0
 fastapi>=0.68
 sqlalchemy>=2.0
 httpx>=0.23
+python-multipart>=0.0.12

@@ -34,12 +34,12 @@ try:
     s3_client.head_bucket(Bucket=BUCKET_NAME)
     logger.info(f"Bucket {BUCKET_NAME} exists")
 except Exception as e:
-    logger.info(f"Creating bucket {BUCKET_NAME}")
+    logger.info(f"Attempting to create bucket {BUCKET_NAME}")
     try:
         s3_client.create_bucket(Bucket=BUCKET_NAME)
         logger.info(f"Bucket {BUCKET_NAME} created successfully")
     except Exception as e:
-        logger.error(f"Failed to create bucket: {e}")
+        logger.warning(f"Failed to create bucket {BUCKET_NAME}: {e}. Continuing as this may be a test environment with mocked S3.")
 
 # RabbitMQ setup
 def get_rabbitmq_connection():

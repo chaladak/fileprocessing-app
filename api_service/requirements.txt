@@ -4,3 +4,4 @@ pika>=1.2.0
 psycopg2-binary>=2.9  # Only for production PostgreSQL
 boto3>=1.18
 uvicorn>=0.15
+python-multipart>=0.0.12
