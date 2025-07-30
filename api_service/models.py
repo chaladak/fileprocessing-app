@@ -1,9 +1,9 @@
+from api_service.database import Base
 from sqlalchemy import Column, String, DateTime, Text
-from database import Base
+from datetime import datetime
 
 class FileRecord(Base):
     __tablename__ = "file_records"
-    
     id = Column(String, primary_key=True)
     filename = Column(String, nullable=False)
     s3_path = Column(String, nullable=False)
@@ -12,4 +12,3 @@ class FileRecord(Base):
     uploaded_at = Column(DateTime, nullable=False)
     processed_at = Column(DateTime, nullable=True)
     processing_result = Column(Text, nullable=True)
-

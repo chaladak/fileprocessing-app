@@ -11,14 +11,15 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+# Clear module cache to prevent stale imports
+for module in list(sys.modules.keys()):
+    if module.startswith("api_service") or module.startswith("processor_service"):
+        del sys.modules[module]
+
 # Add the project root to Python path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
-
-# Import after setting up environment variables
-from api_service.database import Base
-from api_service.models import FileRecord
 
 # Set up an in-memory SQLite database for testing
 DATABASE_URL = "sqlite:///:memory:"
@@ -28,6 +29,10 @@ engine = create_engine(
     poolclass=StaticPool,
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# Import after setting up environment variables
+from api_service.database import Base
+from api_service.models import FileRecord
 
 # Fixture to set up environment variables
 @pytest.fixture(autouse=True)
@@ -41,6 +46,7 @@ def setup_env():
     os.environ["S3_SECRET_KEY"] = "test_secret"
     os.environ["RABBITMQ_URL"] = "amqp://guest:guest@localhost:5672/%2F"
     os.environ["NFS_PATH"] = "/tmp/nfs_test"
+    os.environ["TESTING"] = "true"  # Ensure TESTING is set
     yield
     # Clean up environment variables
     for key in [
@@ -53,6 +59,7 @@ def setup_env():
         "S3_SECRET_KEY",
         "RABBITMQ_URL",
         "NFS_PATH",
+        "TESTING",
     ]:
         os.environ.pop(key, None)
 
