@@ -3,6 +3,7 @@ import os
 import sys
 import json
 import importlib.util
+import importlib
 from unittest.mock import patch, MagicMock
 from datetime import datetime
 import uuid
@@ -32,55 +33,56 @@ def import_notifier():
         'notifier'
     ]
     
-    # Try standard imports first
-    for import_path in possible_imports:
-        try:
-            return importlib.import_module(import_path)
-        except ImportError:
-            continue
+    # Set environment variables before any import
+    env_vars = {
+        'POSTGRES_USER': 'test',
+        'POSTGRES_PASSWORD': 'test',
+        'POSTGRES_HOST': 'localhost',
+        'POSTGRES_DB': 'test',
+        'RABBITMQ_URL': 'amqp://guest:guest@localhost:5672/%2F',
+        'TESTING': 'true'  # Enable testing mode
+    }
     
-    # Try direct file imports
-    possible_paths = [
-        os.path.join(os.path.dirname(__file__), '..', 'notifier.py'),
-        os.path.join(project_root, 'notifier.py'),
-        os.path.join(project_root, 'notification_service', 'notifier.py'),
-    ]
-    
-    for notifier_path in possible_paths:
-        if os.path.exists(notifier_path):
-            spec = importlib.util.spec_from_file_location("notifier", notifier_path)
-            notifier_module = importlib.util.module_from_spec(spec)
-            # Set up environment before loading
-            with patch.dict('os.environ', {
-                'POSTGRES_USER': 'test',
-                'POSTGRES_PASSWORD': 'test', 
-                'POSTGRES_HOST': 'localhost',
-                'POSTGRES_DB': 'test',
-                'RABBITMQ_URL': 'amqp://guest:guest@localhost:5672/%2F'
-            }):
+    with patch.dict('os.environ', env_vars):
+        # Try standard imports first
+        for import_path in possible_imports:
+            try:
+                module = importlib.import_module(import_path)
+                # Ensure module is reloaded with test environment
+                importlib.reload(module)
+                return module
+            except ImportError:
+                continue
+        
+        # Try direct file imports
+        possible_paths = [
+            os.path.join(os.path.dirname(__file__), '..', 'notifier.py'),
+            os.path.join(project_root, 'notifier.py'),
+            os.path.join(project_root, 'notification_service', 'notifier.py'),
+        ]
+        
+        for notifier_path in possible_paths:
+            if os.path.exists(notifier_path):
+                spec = importlib.util.spec_from_file_location("notifier", notifier_path)
+                notifier_module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(notifier_module)
-            return notifier_module
+                return notifier_module
     
     raise ImportError("Could not find notifier module in any expected location")
 
 # Fixture to set up environment variables
 @pytest.fixture(autouse=True)
 def setup_env():
-    os.environ["POSTGRES_USER"] = "test"
-    os.environ["POSTGRES_PASSWORD"] = "test"
-    os.environ["POSTGRES_HOST"] = "localhost"
-    os.environ["POSTGRES_DB"] = "test"
-    os.environ["RABBITMQ_URL"] = "amqp://guest:guest@localhost:5672/%2F"
-    yield
-    # Clean up environment variables
-    for key in [
-        "POSTGRES_USER",
-        "POSTGRES_PASSWORD", 
-        "POSTGRES_HOST",
-        "POSTGRES_DB",
-        "RABBITMQ_URL",
-    ]:
-        os.environ.pop(key, None)
+    env_vars = {
+        "POSTGRES_USER": "test",
+        "POSTGRES_PASSWORD": "test",
+        "POSTGRES_HOST": "localhost",
+        "POSTGRES_DB": "test",
+        "RABBITMQ_URL": "amqp://guest:guest@localhost:5672/%2F",
+        "TESTING": "true"
+    }
+    with patch.dict('os.environ', env_vars):
+        yield
 
 # Import notifier module once for the test session
 notifier_module = None
