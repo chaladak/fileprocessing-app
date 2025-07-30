@@ -5,8 +5,7 @@ import pika
 import logging
 import requests
 from sqlalchemy import create_engine, Column, String, DateTime, Text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.pool import StaticPool
 from datetime import datetime
 
@@ -126,7 +125,7 @@ def send_notification(job_id, status, result):
         return True
     except Exception as e:
         logger.error(f"Error sending notification for job {job_id}: {str(e)}")
-        return False
+        raise  # Raise exception to be handled by caller
 
 def callback(ch, method, properties, body):
     message = json.loads(body)
