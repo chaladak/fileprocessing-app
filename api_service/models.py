@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, DateTime, Text
-from database import Base
+from api_service.database import Base
 
 class FileRecord(Base):
     __tablename__ = "file_records"
@@ -12,3 +12,4 @@ class FileRecord(Base):
     uploaded_at = Column(DateTime, nullable=False)
     processed_at = Column(DateTime, nullable=True)
     processing_result = Column(Text, nullable=True)
+
