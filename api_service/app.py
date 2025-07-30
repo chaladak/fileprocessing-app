@@ -10,8 +10,8 @@ from sqlalchemy import create_engine, Column, String, DateTime, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
-from api_service.database import Base, get_db
-from api_service.models import FileRecord
+from database import Base, get_db
+from models import FileRecord
 
 logging.basicConfig(
     level=logging.INFO, 
