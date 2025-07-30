@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, DateTime, Text
-from .database import Base  # Changed to relative import
+from database import Base
 from datetime import datetime
 
 class FileRecord(Base):

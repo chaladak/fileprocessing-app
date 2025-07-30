@@ -8,8 +8,8 @@ import logging
 from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Depends
 from sqlalchemy.orm import Session
 from datetime import datetime
-from .database import Base, get_db  # Changed to relative import
-from .models import FileRecord      # Changed to relative import
+from database import Base, get_db
+from models import FileRecord
 
 logging.basicConfig(
     level=logging.INFO, 
