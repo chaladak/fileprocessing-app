@@ -7,6 +7,7 @@ import requests
 from sqlalchemy import create_engine, Column, String, DateTime, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 from datetime import datetime
 
 logging.basicConfig(level=logging.INFO)
@@ -48,6 +49,12 @@ def get_rabbitmq_url():
 
 # Get Database URL from environment variables
 def get_database_url():
+    # Check TESTING first to use SQLite for tests
+    if os.getenv("TESTING", "false").lower() == "true":
+        logger.info("Using SQLite in-memory database for testing")
+        return "sqlite:///:memory:"
+    
+    # Production: Construct PostgreSQL URL
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
         pg_user = os.environ.get("POSTGRES_USER")
@@ -57,12 +64,19 @@ def get_database_url():
         if all([pg_user, pg_pass, pg_host, pg_db]):
             database_url = f"postgresql://{pg_user}:{pg_pass}@{pg_host}:5432/{pg_db}"
             logger.info(f"Constructed DATABASE_URL from environment variables")
+        else:
+            logger.error("Missing environment variables for PostgreSQL; cannot construct DATABASE_URL")
+            raise ValueError("DATABASE_URL or PostgreSQL environment variables not set")
     return database_url
 
 # Database setup
 DATABASE_URL = get_database_url()
 logger.info(f"Using database URL: {DATABASE_URL}")
-engine = create_engine(DATABASE_URL)
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
+    poolclass=StaticPool if "sqlite" in DATABASE_URL else None,
+)
 Base.metadata.create_all(engine)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -129,7 +143,6 @@ def callback(ch, method, properties, body):
         logger.error(f"Error processing notification for job {job_id}: {str(e)}")
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
-
 def main():
     logger.info("Notification service starting...")
     
@@ -142,7 +155,6 @@ def main():
     
     logger.info("Waiting for notification messages. To exit press CTRL+C")
     channel.start_consuming()
-
 
 if __name__ == "__main__":
     try:

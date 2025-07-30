@@ -11,6 +11,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+# Clear module cache to prevent premature imports
+for module in list(sys.modules.keys()):
+    if module.startswith("notification_service") or module == "notifier":
+        del sys.modules[module]
+
 # Add the project root to Python path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if project_root not in sys.path:
@@ -44,6 +49,11 @@ def import_notifier():
     }
     
     with patch.dict('os.environ', env_vars):
+        # Clear module cache again to ensure clean import
+        for module in list(sys.modules.keys()):
+            if module.startswith("notification_service") or module == "notifier":
+                del sys.modules[module]
+        
         # Try standard imports first
         for import_path in possible_imports:
             try:
@@ -65,6 +75,7 @@ def import_notifier():
             if os.path.exists(notifier_path):
                 spec = importlib.util.spec_from_file_location("notifier", notifier_path)
                 notifier_module = importlib.util.module_from_spec(spec)
+                sys.modules["notifier"] = notifier_module
                 spec.loader.exec_module(notifier_module)
                 return notifier_module
     
@@ -82,6 +93,10 @@ def setup_env():
         "TESTING": "true"
     }
     with patch.dict('os.environ', env_vars):
+        # Clear module cache in fixture to ensure clean state
+        for module in list(sys.modules.keys()):
+            if module.startswith("notification_service") or module == "notifier":
+                del sys.modules[module]
         yield
 
 # Import notifier module once for the test session
