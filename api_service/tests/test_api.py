@@ -16,13 +16,13 @@ for module in list(sys.modules.keys()):
         del sys.modules[module]
 
 # Add the project root to Python path
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 # Import after setting up environment variables
-from database import Base, get_db
-from models import FileRecord
+from api_service.database import Base, get_db
+from api_service.models import FileRecord
 
 # Set up an in-memory SQLite database for testing
 DATABASE_URL = "sqlite:///:memory:"
@@ -44,7 +44,7 @@ def override_get_db():
 # Fixture for FastAPI test client
 @pytest.fixture
 def client():
-    from app import app
+    from api_service.app import app
     app.dependency_overrides[get_db] = override_get_db
     return TestClient(app)
 
@@ -95,8 +95,8 @@ def nfs_dir():
 # Test 1: Test file upload endpoint
 def test_upload_file(client, nfs_dir):
     # Mock S3 client and RabbitMQ connection
-    with patch("app.s3_client") as mock_s3_client, patch(
-        "app.get_rabbitmq_connection"
+    with patch("api_service.app.s3_client") as mock_s3_client, patch(
+        "api_service.app.get_rabbitmq_connection"
     ) as mock_rabbit:
         mock_s3_client.head_bucket.return_value = None
         mock_s3_client.upload_fileobj.return_value = None
