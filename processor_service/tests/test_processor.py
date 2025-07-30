@@ -4,37 +4,19 @@ import sys
 import json
 import tempfile
 import shutil
-from unittest.mock import patch, MagicMock, mock_open
+from unittest.mock import patch, MagicMock
 from datetime import datetime
 import uuid
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-# Clear module cache to prevent stale imports
-for module in list(sys.modules.keys()):
-    if module.startswith("api_service") or module.startswith("processor_service"):
-        del sys.modules[module]
+# Add the processor_service directory to Python path
+processor_service_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if processor_service_path not in sys.path:
+    sys.path.insert(0, processor_service_path)
 
-# Add the project root to Python path
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-
-# Set up an in-memory SQLite database for testing
-DATABASE_URL = "sqlite:///:memory:"
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Import after setting up environment variables
-from api_service.database import Base
-from api_service.models import FileRecord
-
-# Fixture to set up environment variables
+# Set up test environment variables BEFORE any imports
 @pytest.fixture(autouse=True)
 def setup_env():
     os.environ["POSTGRES_USER"] = "test"
@@ -46,7 +28,7 @@ def setup_env():
     os.environ["S3_SECRET_KEY"] = "test_secret"
     os.environ["RABBITMQ_URL"] = "amqp://guest:guest@localhost:5672/%2F"
     os.environ["NFS_PATH"] = "/tmp/nfs_test"
-    os.environ["TESTING"] = "true"  # Ensure TESTING is set
+    os.environ["TESTING"] = "true"
     yield
     # Clean up environment variables
     for key in [
@@ -63,14 +45,16 @@ def setup_env():
     ]:
         os.environ.pop(key, None)
 
-# Create tables before tests
-@pytest.fixture(scope="session", autouse=True)
-def setup_database():
-    Base.metadata.create_all(bind=engine)
-    yield
-    Base.metadata.drop_all(bind=engine)
+# Set up test database
+DATABASE_URL = "sqlite:///:memory:"
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Fixture to create temporary NFS directory and test files
+# Fixture to create temporary files
 @pytest.fixture
 def temp_files():
     temp_dir = tempfile.mkdtemp()
@@ -100,10 +84,15 @@ def test_process_file_success(temp_files):
         mock_connection.channel.return_value = mock_channel
         mock_pika.return_value = mock_connection
         
-        # Mock the SessionLocal in the processor module
-        with patch('processor_service.processor.SessionLocal', TestingSessionLocal):
+        # Mock the SessionLocal and engine in the processor module
+        with patch('processor.SessionLocal', TestingSessionLocal), \
+             patch('processor.engine', engine):
+            
             # Import processor after mocking
-            from processor_service import processor
+            from processor import process_file, FileRecord, Base
+            
+            # Create tables
+            Base.metadata.create_all(bind=engine)
             
             # Set up test data
             job_id = str(uuid.uuid4())
@@ -132,7 +121,7 @@ def test_process_file_success(temp_files):
             }
             
             # Process the file
-            processor.process_file(message)
+            process_file(message)
             
             # Verify database was updated
             db = TestingSessionLocal()
@@ -162,8 +151,13 @@ def test_process_file_missing_file():
         mock_connection.channel.return_value = mock_channel
         mock_pika.return_value = mock_connection
         
-        with patch('processor_service.processor.SessionLocal', TestingSessionLocal):
-            from processor_service import processor
+        with patch('processor.SessionLocal', TestingSessionLocal), \
+             patch('processor.engine', engine):
+            
+            from processor import process_file, FileRecord, Base
+            
+            # Create tables
+            Base.metadata.create_all(bind=engine)
             
             # Set up test data
             job_id = str(uuid.uuid4())
@@ -193,7 +187,7 @@ def test_process_file_missing_file():
             
             # Process the file (should raise exception)
             with pytest.raises(Exception):
-                processor.process_file(message)
+                process_file(message)
             
             # Verify database was updated with error status
             db = TestingSessionLocal()
@@ -207,8 +201,8 @@ def test_compute_file_hash(temp_files):
     with patch('pika.BlockingConnection'), \
          patch('boto3.client'):
         
-        with patch('processor_service.processor.SessionLocal', TestingSessionLocal):
-            from processor_service.processor import compute_file_hash
+        with patch('processor.SessionLocal', TestingSessionLocal):
+            from processor import compute_file_hash
             import hashlib
             
             # Compute hash using the function
@@ -218,3 +212,80 @@ def test_compute_file_hash(temp_files):
             expected_hash = hashlib.sha256(temp_files["test_content"]).hexdigest()
             
             assert computed_hash == expected_hash
+
+# Test 4: Test callback function
+def test_callback_success(temp_files):
+    with patch('pika.BlockingConnection') as mock_pika, \
+         patch('boto3.client') as mock_boto3:
+        
+        # Setup mocks
+        mock_connection = MagicMock()
+        mock_channel = MagicMock()
+        mock_connection.channel.return_value = mock_channel
+        mock_pika.return_value = mock_connection
+        
+        with patch('processor.SessionLocal', TestingSessionLocal), \
+             patch('processor.engine', engine):
+            
+            from processor import callback, FileRecord, Base
+            
+            # Create tables
+            Base.metadata.create_all(bind=engine)
+            
+            # Set up test data
+            job_id = str(uuid.uuid4())
+            filename = "test_file.txt"
+            nfs_path = temp_files["test_file_path"]
+            
+            # Create initial file record in database
+            db = TestingSessionLocal()
+            file_record = FileRecord(
+                id=job_id,
+                filename=filename,
+                s3_path=f"file-processing/{job_id}/{filename}",
+                nfs_path=nfs_path,
+                status="uploaded",
+                uploaded_at=datetime.now()
+            )
+            db.add(file_record)
+            db.commit()
+            db.close()
+            
+            # Create message
+            message = {
+                "job_id": job_id,
+                "filename": filename,
+                "nfs_path": nfs_path
+            }
+            
+            # Mock channel and method objects
+            mock_ch = MagicMock()
+            mock_method = MagicMock()
+            mock_method.delivery_tag = "test_tag"
+            mock_properties = MagicMock()
+            
+            # Test callback
+            callback(mock_ch, mock_method, mock_properties, json.dumps(message))
+            
+            # Verify basic_ack was called
+            mock_ch.basic_ack.assert_called_once_with(delivery_tag="test_tag")
+            
+            # Verify database was updated
+            db = TestingSessionLocal()
+            updated_record = db.query(FileRecord).filter(FileRecord.id == job_id).first()
+            assert updated_record is not None
+            assert updated_record.status == "processed"
+            db.close()
+
+# Test 5: Test wait_for_file function
+def test_wait_for_file(temp_files):
+    with patch('processor.SessionLocal', TestingSessionLocal):
+        from processor import wait_for_file
+        
+        # Test with existing file
+        result = wait_for_file(temp_files["test_file_path"], retries=1, delay=0.1)
+        assert result is True
+        
+        # Test with non-existing file
+        result = wait_for_file("/nonexistent/path", retries=1, delay=0.1)
+        assert result is False

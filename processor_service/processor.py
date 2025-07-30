@@ -58,7 +58,10 @@ engine = create_engine(
     connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
     poolclass=StaticPool if "sqlite" in DATABASE_URL else None,
 )
-Base.metadata.create_all(bind=engine)
+
+# Only create tables if not in testing mode (let tests handle this)
+if os.getenv("TESTING", "false").lower() != "true":
+    Base.metadata.create_all(bind=engine)
 
 # Session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -138,12 +141,27 @@ def process_file(message):
     nfs_path = message["nfs_path"]
     
     logger.info(f"Processing file for job {job_id}")
+    db = SessionLocal()
+    
     try:
-        # Simulate file processing
-        import hashlib
+        # Update status to processing
+        file_record = db.query(FileRecord).filter(FileRecord.id == job_id).first()
+        if not file_record:
+            logger.error(f"FileRecord not found for job {job_id}")
+            raise Exception("FileRecord not found")
+        
+        file_record.status = "processing"
+        db.commit()
+        
+        # Check if file exists and wait if necessary
+        if not wait_for_file(nfs_path, retries=5, delay=1):
+            raise Exception(f"File not found: {nfs_path}")
+        
+        # Process the file
         with open(nfs_path, "rb") as f:
             file_content = f.read()
             file_hash = hashlib.sha256(file_content).hexdigest()
+            
         result = {
             "size_bytes": len(file_content),
             "processed_timestamp": datetime.now().isoformat(),
@@ -152,23 +170,16 @@ def process_file(message):
         }
 
         # Update FileRecord in database
-        db = SessionLocal()
-        file_record = db.query(FileRecord).filter(FileRecord.id == job_id).first()
-        if file_record:
-            file_record.status = "processed"
-            file_record.processed_at = datetime.now()
-            file_record.processing_result = json.dumps(result)
-            db.commit()
-            logger.info(f"Updated FileRecord for job {job_id} to status: processed")
-        else:
-            logger.error(f"FileRecord not found for job {job_id}")
-            raise Exception("FileRecord not found")
-        db.close()
+        file_record.status = "processed"
+        file_record.processed_at = datetime.now()
+        file_record.processing_result = json.dumps(result)
+        db.commit()
+        logger.info(f"Updated FileRecord for job {job_id} to status: processed")
 
         # Send notification to RabbitMQ
         connection = get_rabbitmq_connection()
         channel = connection.channel()
-        channel.queue_declare(queue="notifications")
+        channel.queue_declare(queue="notifications", durable=True)
         notification_message = {
             "job_id": job_id,
             "status": "processed",
@@ -185,21 +196,33 @@ def process_file(message):
 
     except Exception as e:
         logger.error(f"Error processing job {job_id}: {str(e)}")
-        db = SessionLocal()
-        file_record = db.query(FileRecord).filter(FileRecord.id == job_id).first()
-        if file_record:
-            file_record.status = "error"
-            db.commit()
-        db.close()
+        # Update status to error
+        try:
+            file_record = db.query(FileRecord).filter(FileRecord.id == job_id).first()
+            if file_record:
+                file_record.status = "error"
+                file_record.processing_result = json.dumps({
+                    "success": False,
+                    "error": str(e),
+                    "processed_timestamp": datetime.now().isoformat()
+                })
+                db.commit()
+        except Exception as db_error:
+            logger.error(f"Failed to update error status: {db_error}")
+            db.rollback()
         raise
+    finally:
+        db.close()
 
 def callback(ch, method, properties, body):
+    message = None
     try:
         message = json.loads(body)
         process_file(message)
         ch.basic_ack(delivery_tag=method.delivery_tag)
+        logger.info(f"Successfully processed message for job {message.get('job_id', 'unknown')}")
     except Exception as e:
-        logger.error(f"Processing error for job {message.get('job_id', 'unknown')}: {str(e)}")
+        logger.error(f"Processing error for job {message.get('job_id', 'unknown') if message else 'unknown'}: {str(e)}")
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
 def main():
@@ -209,7 +232,7 @@ def main():
         connection = get_rabbitmq_connection()
         channel = connection.channel()
 
-        channel.queue_declare(queue='file_processing')
+        channel.queue_declare(queue='file_processing', durable=True)
         channel.basic_qos(prefetch_count=1)
 
         channel.basic_consume(
