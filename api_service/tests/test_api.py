@@ -1,5 +1,7 @@
 import pytest
 import os
+import sys
+import shutil
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -7,7 +9,16 @@ from sqlalchemy.pool import StaticPool
 from unittest.mock import patch, MagicMock
 from datetime import datetime
 import uuid
-import shutil
+
+# Clear module cache to prevent stale imports
+for module in list(sys.modules.keys()):
+    if module.startswith("api_service"):
+        del sys.modules[module]
+
+# Add the project root to Python path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 # Import after setting up environment variables
 from api_service.database import Base, get_db
@@ -34,8 +45,6 @@ def override_get_db():
 @pytest.fixture
 def client():
     from api_service.app import app
-    from fastapi.testclient import TestClient
-    
     app.dependency_overrides[get_db] = override_get_db
     return TestClient(app)
 
@@ -58,6 +67,7 @@ def setup_env():
     os.environ["S3_SECRET_KEY"] = "test_secret"
     os.environ["RABBITMQ_URL"] = "amqp://guest:guest@localhost:5672/%2F"
     os.environ["NFS_PATH"] = "/tmp/nfs_test"
+    os.environ["TESTING"] = "true"  # Ensure TESTING is set
     yield
     # Clean up environment variables
     for key in [
@@ -70,6 +80,7 @@ def setup_env():
         "S3_SECRET_KEY",
         "RABBITMQ_URL",
         "NFS_PATH",
+        "TESTING",
     ]:
         os.environ.pop(key, None)
 

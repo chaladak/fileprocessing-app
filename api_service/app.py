@@ -5,10 +5,8 @@ import boto3
 import pika
 import shutil
 import logging
-from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks
-from sqlalchemy import create_engine, Column, String, DateTime, Text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Depends
+from sqlalchemy.orm import Session
 from datetime import datetime
 from database import Base, get_db
 from models import FileRecord
@@ -20,58 +18,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="File Processing API")
-
-# Database setup
-POSTGRES_USER = os.getenv("POSTGRES_USER")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
-POSTGRES_HOST = os.getenv("POSTGRES_HOST")
-POSTGRES_DB = os.getenv("POSTGRES_DB")
-
-# Log environment variables for debugging
-logger.info(f"POSTGRES_USER: {POSTGRES_USER}")
-logger.info(f"POSTGRES_PASSWORD: {'*' * len(POSTGRES_PASSWORD) if POSTGRES_PASSWORD else None}")
-logger.info(f"POSTGRES_HOST: {POSTGRES_HOST}")
-logger.info(f"POSTGRES_DB: {POSTGRES_DB}")
-
-# Validate environment variables
-if not all([POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_DB]):
-    missing = [k for k, v in {
-        "POSTGRES_USER": POSTGRES_USER,
-        "POSTGRES_PASSWORD": POSTGRES_PASSWORD,
-        "POSTGRES_HOST": POSTGRES_HOST,
-        "POSTGRES_DB": POSTGRES_DB
-    }.items() if not v]
-    raise EnvironmentError(f"Missing environment variables: {missing}")
-
-# Construct DATABASE_URL
-DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:5432/{POSTGRES_DB}"
-
-# Log DATABASE_URL for debugging (redacted password)
-safe_db_url = DATABASE_URL.replace(POSTGRES_PASSWORD, "*****")
-logger.info(f"DATABASE_URL: {safe_db_url}")
-
-# Create engine and session
-try:
-    engine = create_engine(DATABASE_URL)
-    logger.info("Database engine created successfully")
-except Exception as e:
-    logger.error(f"Failed to create database engine: {e}")
-    raise
-
-Base = declarative_base()
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Function to create tables
-def initialize_database():
-    try:
-        logger.info("Creating tables...")
-        Base.metadata.create_all(engine)
-        logger.info("Tables created successfully")
-    except Exception as e:
-        logger.error(f"Error creating tables: {e}")
-
-# Initialize database tables
-initialize_database()
 
 # S3 setup
 s3_client = boto3.client(
@@ -182,7 +128,7 @@ def process_uploaded_file(job_id: str, filename: str, temp_file_path: str, nfs_f
     except Exception as processing_error:
         logger.error(f"Error processing uploaded file: {processing_error}")
         # Update database status to "error"
-        db = SessionLocal()
+        db = next(get_db())
         try:
             file_record = db.query(FileRecord).filter(FileRecord.id == job_id).first()
             if file_record:
@@ -195,7 +141,7 @@ def process_uploaded_file(job_id: str, filename: str, temp_file_path: str, nfs_f
         raise
 
 @app.post("/upload/")
-async def upload_file(file: UploadFile, background_tasks: BackgroundTasks):
+async def upload_file(file: UploadFile, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     job_id = str(uuid.uuid4())
     temp_file_path = f"/tmp/{job_id}_{file.filename}"
     
@@ -218,7 +164,6 @@ async def upload_file(file: UploadFile, background_tasks: BackgroundTasks):
             logger.warning(f"File not found in NFS path before RabbitMQ publish: {nfs_file_path}")
 
         # Create database record
-        db = SessionLocal()
         file_record = FileRecord(
             id=job_id,
             filename=file.filename,
@@ -230,7 +175,6 @@ async def upload_file(file: UploadFile, background_tasks: BackgroundTasks):
         
         db.add(file_record)
         db.commit()
-        db.close()
         logger.info(f"Database record created for job {job_id}")
 
         # Process file in background
@@ -251,23 +195,20 @@ async def upload_file(file: UploadFile, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/status/{job_id}")
-async def get_status(job_id: str):
+async def get_status(job_id: str, db: Session = Depends(get_db)):
     logger.info(f"Getting status for job: {job_id}")
-    db = SessionLocal()
     file_record = db.query(FileRecord).filter(FileRecord.id == job_id).first()
     if not file_record:
         logger.warning(f"Job not found: {job_id}")
-        db.close()
         raise HTTPException(status_code=404, detail="Job not found")
 
     result = {
         "job_id": file_record.id,
         "filename": file_record.filename,
         "status": file_record.status,
-        "uploaded_at": file_record.uploaded_at,
-        "processed_at": file_record.processed_at
+        "uploaded_at": file_record.uploaded_at.isoformat(),
+        "processed_at": file_record.processed_at.isoformat() if file_record.processed_at else None
     }
-    db.close()
     logger.info(f"Returning status for job {job_id}: {file_record.status}")
     return result
 
