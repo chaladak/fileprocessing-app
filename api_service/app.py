@@ -143,7 +143,7 @@ def process_uploaded_file(job_id: str, filename: str, temp_file_path: str, nfs_f
 @app.post("/upload/")
 async def upload_file(file: UploadFile, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     job_id = str(uuid.uuid4())
-    temp_file_path = f"/tmp/{job_id}_{file.filename}"
+    temp_file_path = f"/tmp/temp_{job_id}_{file.filename}"  # Use different temp path
     
     logger.info(f"Processing file upload: {file.filename}, job_id: {job_id}")
     
@@ -153,10 +153,15 @@ async def upload_file(file: UploadFile, background_tasks: BackgroundTasks, db: S
             shutil.copyfileobj(file.file, buffer)
         logger.info(f"File saved to temp location: {temp_file_path}")
         
-        # Copy to NFS
+        # Copy to NFS (use different path)
         nfs_file_path = f"{NFS_PATH}/{job_id}_{file.filename}"
-        shutil.copy(temp_file_path, nfs_file_path)
-        logger.info(f"File copied to NFS: {nfs_file_path}")
+        
+        # Check if source and destination are different
+        if temp_file_path != nfs_file_path:
+            shutil.copy(temp_file_path, nfs_file_path)
+            logger.info(f"File copied to NFS: {nfs_file_path}")
+        else:
+            logger.info(f"Temp and NFS paths are the same, skipping copy: {nfs_file_path}")
 
         if os.path.exists(nfs_file_path):
             logger.info(f"File successfully written to NFS path: {nfs_file_path}")
@@ -193,6 +198,14 @@ async def upload_file(file: UploadFile, background_tasks: BackgroundTasks, db: S
         if os.path.exists(temp_file_path):
             os.remove(temp_file_path)
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        # Clean up temp file
+        if os.path.exists(temp_file_path):
+            try:
+                os.remove(temp_file_path)
+                logger.info(f"Cleaned up temp file: {temp_file_path}")
+            except Exception as cleanup_error:
+                logger.warning(f"Failed to cleanup temp file: {cleanup_error}")
 
 @app.get("/status/{job_id}")
 async def get_status(job_id: str, db: Session = Depends(get_db)):
