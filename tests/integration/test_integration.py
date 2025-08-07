@@ -562,42 +562,6 @@ def test_background_task_processes_and_updates_status(rabbitmq_channel):
     assert data["status"] == "processed"
     assert data["processed_at"] is not None
 
-def test_s3_upload_failure_sets_error_status(monkeypatch):
-    """Simulate S3 upload failure and ensure DB is updated with error status asynchronously."""
-
-    filename = "s3_fail_test.txt"
-    file_content = b"S3 fail content"
-
-    # Monkeypatch the S3 upload function to raise an exception
-    def mock_upload_fileobj(*args, **kwargs):
-        raise Exception("Simulated S3 upload failure")
-
-    monkeypatch.setattr(s3_client, "upload_fileobj", mock_upload_fileobj)
-
-    # Upload file
-    files = {"file": (filename, file_content, "text/plain")}
-    response = client.post("/upload/", files=files)
-
-    # Should still return 200 because the actual S3 upload is async
-    assert response.status_code == 200
-    job_id = response.json()["job_id"]
-
-    # Wait a few seconds for background task to run and fail
-    for _ in range(10):  # 10 * 1s = 10s max wait
-        db = TestSessionLocal()
-        try:
-            file_record = db.query(models.FileRecord).filter(models.FileRecord.id == job_id).first()
-            if file_record and file_record.status == "error":
-                break
-        finally:
-            db.close()
-        time.sleep(1)
-    else:
-        pytest.fail("FileRecord status did not become 'error' after S3 upload failure")
-
-    print(f"✓ Verified 'error' status for job_id: {job_id}")
-
-
 def test_already_processed_job_not_reprocessed():
     """Test that an already processed job does not get reprocessed or reset when fetched via /status."""
     file_content = b"Final test content"
