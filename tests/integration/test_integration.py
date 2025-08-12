@@ -32,14 +32,42 @@ sys.path.insert(0, str(notification_service_path))
 # Suppress datetime.utcnow() deprecation warning
 warnings.filterwarnings("ignore", category=DeprecationWarning, message=r".*datetime\.utcnow.*")
 
-# Set environment variables for testing BEFORE any imports
+# IMPORTANT: Don't set localhost URLs here - use environment variables from Docker
+# Only set TESTING flag and database URL here
 os.environ["TESTING"] = "true"
-os.environ["S3_ENDPOINT"] = "http://localhost:9000"
-os.environ["S3_ACCESS_KEY"] = "minioadmin"
-os.environ["S3_SECRET_KEY"] = "minioadmin"
-os.environ["RABBITMQ_URL"] = "amqp://guest:guest@localhost:5672/%2F"
-os.environ["DATABASE_URL"] = "sqlite:///test_integration.db"  # Use file-based SQLite for persistence
-os.environ["NFS_PATH"] = "/tmp"
+
+# Use environment variables if they exist, otherwise fall back to localhost (for local testing)
+# The Docker environment will override these with proper service names
+if "S3_ENDPOINT" not in os.environ:
+    os.environ["S3_ENDPOINT"] = "http://localhost:9000"
+if "S3_ACCESS_KEY" not in os.environ:
+    os.environ["S3_ACCESS_KEY"] = "minioadmin"
+if "S3_SECRET_KEY" not in os.environ:
+    os.environ["S3_SECRET_KEY"] = "minioadmin"
+if "RABBITMQ_URL" not in os.environ:
+    os.environ["RABBITMQ_URL"] = "amqp://guest:guest@localhost:5672/%2F"
+if "DATABASE_URL" not in os.environ:
+    os.environ["DATABASE_URL"] = "sqlite:///test_integration.db"
+if "NFS_PATH" not in os.environ:
+    os.environ["NFS_PATH"] = "/tmp"
+
+# Validate environment variables to catch localhost issues
+def validate_environment():
+    """Validate that environment variables are correctly set for Docker environment."""
+    rabbitmq_url = os.environ.get("RABBITMQ_URL", "")
+    s3_endpoint = os.environ.get("S3_ENDPOINT", "")
+    
+    print(f"RABBITMQ_URL: {rabbitmq_url}")
+    print(f"S3_ENDPOINT: {s3_endpoint}")
+    
+    # If we're in Docker (TESTING=true and not localhost), validate service names
+    if os.environ.get("TESTING") == "true":
+        if "localhost" in rabbitmq_url and "rabbitmq" not in rabbitmq_url:
+            print("WARNING: RABBITMQ_URL contains localhost but should use service name 'rabbitmq'")
+        if "localhost" in s3_endpoint and "minio" not in s3_endpoint:
+            print("WARNING: S3_ENDPOINT contains localhost but should use service name 'minio'")
+
+validate_environment()
 
 # Global storage for file content during tests
 test_file_storage = {}
@@ -177,14 +205,55 @@ database.SessionLocal = TestSessionLocal
 # Initialize FastAPI test client
 client = TestClient(api_app.app, backend="asyncio")
 
-# S3 (MinIO) setup
-s3_client = boto3.client(
-    "s3",
-    endpoint_url=os.environ["S3_ENDPOINT"],
-    aws_access_key_id=os.environ["S3_ACCESS_KEY"],
-    aws_secret_access_key=os.environ["S3_SECRET_KEY"],
-)
+# S3 (MinIO) setup with proper error handling and retry logic
+def create_s3_client():
+    """Create S3 client with proper configuration for Docker environment."""
+    return boto3.client(
+        "s3",
+        endpoint_url=os.environ["S3_ENDPOINT"],
+        aws_access_key_id=os.environ["S3_ACCESS_KEY"],
+        aws_secret_access_key=os.environ["S3_SECRET_KEY"],
+        region_name='us-east-1',  # Add explicit region
+        config=boto3.session.Config(
+            retries={'max_attempts': 3},
+            connect_timeout=10,
+            read_timeout=10
+        )
+    )
+
+s3_client = create_s3_client()
 BUCKET_NAME = "file-processing"
+
+def wait_for_service_ready():
+    """Wait for external services to be ready."""
+    max_attempts = 30
+    
+    # Wait for MinIO
+    for i in range(max_attempts):
+        try:
+            s3_client.list_buckets()
+            print("✓ MinIO service is ready")
+            break
+        except Exception as e:
+            if i == max_attempts - 1:
+                print(f"✗ MinIO service failed to become ready: {e}")
+                raise
+            print(f"Waiting for MinIO... attempt {i+1}/{max_attempts}")
+            time.sleep(2)
+    
+    # Wait for RabbitMQ
+    for i in range(max_attempts):
+        try:
+            connection = pika.BlockingConnection(pika.URLParameters(os.environ["RABBITMQ_URL"]))
+            connection.close()
+            print("✓ RabbitMQ service is ready")
+            break
+        except Exception as e:
+            if i == max_attempts - 1:
+                print(f"✗ RabbitMQ service failed to become ready: {e}")
+                raise
+            print(f"Waiting for RabbitMQ... attempt {i+1}/{max_attempts}")
+            time.sleep(2)
 
 @pytest.fixture(autouse=True)
 def clear_test_file_storage():
@@ -195,6 +264,9 @@ def clear_test_file_storage():
 @pytest.fixture(scope="module", autouse=True)
 def setup_test_environment():
     """Setup test environment before any tests run."""
+    # Wait for services to be ready
+    wait_for_service_ready()
+    
     # Remove existing test database if it exists
     import os
     if os.path.exists("test_integration.db"):
@@ -204,16 +276,25 @@ def setup_test_environment():
     models.Base.metadata.create_all(bind=test_engine)
     print("✓ Test database tables created")
     
-    # Setup S3 bucket
-    try:
-        s3_client.create_bucket(Bucket=BUCKET_NAME)
-        print("✓ S3 bucket created")
-    except s3_client.exceptions.BucketAlreadyExists:
-        print("✓ S3 bucket already exists")
-    except s3_client.exceptions.BucketAlreadyOwnedByYou:
-        print("✓ S3 bucket already owned by you")
-    except Exception as e:
-        print(f"Warning: Could not create bucket: {e}")
+    # Setup S3 bucket with retry logic
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            s3_client.create_bucket(Bucket=BUCKET_NAME)
+            print("✓ S3 bucket created")
+            break
+        except s3_client.exceptions.BucketAlreadyExists:
+            print("✓ S3 bucket already exists")
+            break
+        except s3_client.exceptions.BucketAlreadyOwnedByYou:
+            print("✓ S3 bucket already owned by you")
+            break
+        except Exception as e:
+            if attempt == max_retries - 1:
+                print(f"Warning: Could not create bucket after {max_retries} attempts: {e}")
+            else:
+                print(f"Attempt {attempt + 1} to create bucket failed: {e}")
+                time.sleep(2)
     
     yield
     
@@ -244,10 +325,20 @@ def setup_test_environment():
 
 @pytest.fixture(scope="module")
 def rabbitmq_connection():
-    """Create RabbitMQ connection for tests."""
-    connection = pika.BlockingConnection(pika.URLParameters(os.environ["RABBITMQ_URL"]))
-    yield connection
-    connection.close()
+    """Create RabbitMQ connection for tests with retry logic."""
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            connection = pika.BlockingConnection(pika.URLParameters(os.environ["RABBITMQ_URL"]))
+            yield connection
+            connection.close()
+            return
+        except Exception as e:
+            if attempt == max_retries - 1:
+                print(f"Failed to connect to RabbitMQ after {max_retries} attempts: {e}")
+                raise
+            print(f"RabbitMQ connection attempt {attempt + 1} failed: {e}")
+            time.sleep(2)
 
 @pytest.fixture(scope="module")
 def rabbitmq_channel(rabbitmq_connection):
@@ -263,6 +354,50 @@ def rabbitmq_channel(rabbitmq_connection):
     channel.queue_purge(queue="notifications")
     
     yield channel
+
+def test_services_connectivity():
+    """Basic connectivity test for all services."""
+    
+    # Test MinIO connectivity
+    try:
+        response = s3_client.list_buckets()
+        print(f"✓ MinIO connection successful - found {len(response.get('Buckets', []))} buckets")
+    except Exception as e:
+        pytest.fail(f"MinIO connection failed: {e}")
+    
+    # Test RabbitMQ connectivity
+    try:
+        connection = pika.BlockingConnection(pika.URLParameters(os.environ["RABBITMQ_URL"]))
+        channel = connection.channel()
+        # Test queue operations
+        channel.queue_declare(queue="test_connectivity", durable=False)
+        channel.queue_delete(queue="test_connectivity")
+        connection.close()
+        print("✓ RabbitMQ connection successful")
+    except Exception as e:
+        pytest.fail(f"RabbitMQ connection failed: {e}")
+    
+    # Test FastAPI app
+    try:
+        response = client.get("/health")  
+        # If health endpoint doesn't exist, try root endpoint
+        if response.status_code == 404:
+            response = client.get("/")
+        
+        # As long as we get some response (not a connection error), it's working
+        print(f"✓ FastAPI app accessible (status: {response.status_code})")
+    except Exception as e:
+        pytest.fail(f"FastAPI app not accessible: {e}")
+    
+    # Test database connectivity
+    try:
+        db = TestSessionLocal()
+        # Try to query the file_records table
+        count = db.query(models.FileRecord).count()
+        db.close()
+        print(f"✓ Database connection successful (found {count} records)")
+    except Exception as e:
+        pytest.fail(f"Database connection failed: {e}")
 
 def test_file_upload_and_db_record():
     """Test file upload and database record creation in api_service."""
@@ -417,49 +552,6 @@ def test_file_processing(rabbitmq_channel):
     finally:
         db.close()
 
-def test_services_connectivity():
-    """Basic connectivity test for all services."""
-    
-    # Test MinIO connectivity
-    try:
-        s3_client.list_buckets()
-        print("✓ MinIO connection successful")
-    except Exception as e:
-        pytest.fail(f"MinIO connection failed: {e}")
-    
-    # Test RabbitMQ connectivity
-    try:
-        connection = pika.BlockingConnection(pika.URLParameters(os.environ["RABBITMQ_URL"]))
-        channel = connection.channel()
-        channel.queue_declare(queue="test_connectivity", durable=False)
-        channel.queue_delete(queue="test_connectivity")
-        connection.close()
-        print("✓ RabbitMQ connection successful")
-    except Exception as e:
-        pytest.fail(f"RabbitMQ connection failed: {e}")
-    
-    # Test FastAPI app
-    try:
-        response = client.get("/health")  
-        # If health endpoint doesn't exist, try root endpoint
-        if response.status_code == 404:
-            response = client.get("/")
-        
-        # As long as we get some response (not a connection error), it's working
-        print("✓ FastAPI app accessible")
-    except Exception as e:
-        pytest.fail(f"FastAPI app not accessible: {e}")
-    
-    # Test database connectivity
-    try:
-        db = TestSessionLocal()
-        # Try to query the file_records table
-        count = db.query(models.FileRecord).count()
-        db.close()
-        print(f"✓ Database connection successful (found {count} records)")
-    except Exception as e:
-        pytest.fail(f"Database connection failed: {e}")
-
 def test_duplicate_file_upload_creates_new_job_id():
     """Uploading the same file twice should result in different job_ids and separate DB entries."""
     file_content = b"Duplicate test content"
@@ -484,9 +576,9 @@ def test_duplicate_file_upload_creates_new_job_id():
         assert record1 and record2
         assert record1.filename == record2.filename
         assert record1.nfs_path != record2.nfs_path
+        print(f"✓ Duplicate upload test passed: {job_id1} != {job_id2}")
     finally:
         db.close()
-
 
 def test_status_for_nonexistent_job():
     """Requesting status for a non-existent job_id should return 404."""
@@ -494,7 +586,7 @@ def test_status_for_nonexistent_job():
     response = client.get(f"/status/{non_existent_job_id}")
     assert response.status_code == 404
     assert response.json()["detail"] == "Job not found"
-
+    print(f"✓ Non-existent job test passed for job_id: {non_existent_job_id}")
 
 def test_upload_empty_file():
     """Uploading an empty file should still be accepted and processed."""
@@ -511,9 +603,9 @@ def test_upload_empty_file():
         assert file_record is not None
         assert file_record.filename == filename
         assert file_record.status == "uploaded"
+        print(f"✓ Empty file upload test passed for job_id: {job_id}")
     finally:
         db.close()
-
 
 def test_background_task_processes_and_updates_status(rabbitmq_channel):
     """Test full flow: upload file -> wait -> simulate processor -> verify DB status."""
@@ -552,6 +644,7 @@ def test_background_task_processes_and_updates_status(rabbitmq_channel):
             "processed_timestamp": datetime.now(timezone.utc).isoformat()
         })
         db.commit()
+        print(f"✓ Background processing simulation completed for job_id: {job_id}")
     finally:
         db.close()
 
@@ -561,6 +654,7 @@ def test_background_task_processes_and_updates_status(rabbitmq_channel):
     data = status_response.json()
     assert data["status"] == "processed"
     assert data["processed_at"] is not None
+    print(f"✓ Background task status check passed for job_id: {job_id}")
 
 def test_already_processed_job_not_reprocessed():
     """Test that an already processed job does not get reprocessed or reset when fetched via /status."""
@@ -587,6 +681,7 @@ def test_already_processed_job_not_reprocessed():
             "processed_timestamp": datetime.now(timezone.utc).isoformat()
         })
         db.commit()
+        print(f"✓ Simulated processing completion for job_id: {job_id}")
     finally:
         db.close()
 
@@ -596,6 +691,7 @@ def test_already_processed_job_not_reprocessed():
     data = response.json()
     assert data["status"] == "processed"
     assert data["processed_at"] is not None
+    print(f"✓ Already processed job test passed for job_id: {job_id}")
 
 if __name__ == "__main__":
     # Run tests individually for debugging
