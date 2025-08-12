@@ -8,7 +8,6 @@ services:
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
-      # Reduce startup time
       MINIO_BROWSER_REDIRECT_URL: http://localhost:9001
     command: server /data --console-address ":9001"
     healthcheck:
@@ -21,8 +20,7 @@ services:
       - minio_data:/data
     networks:
       - app-network
-    restart: "no"  # Don't auto-restart in test environment
-    # Reduce resource usage for faster startup
+    restart: "no"
     deploy:
       resources:
         limits:
@@ -31,19 +29,18 @@ services:
           memory: 256M
 
   rabbitmq:
-    image: rabbitmq:3-management-alpine  # Use alpine for faster startup
+    image: rabbitmq:3-management-alpine
     ports:
-      - "5672"  # Let Docker assign a random port
-      - "15672" # Management interface (optional)
+      - "5672"
+      - "15672"
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
-      # Optimize for test environment - faster startup, less logging
       RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit log_levels [{connection,error},{default,error}] disk_free_limit 1073741824"
       RABBITMQ_MNESIA_TABLE_LOADING_RETRY_TIMEOUT: 5000
       RABBITMQ_MNESIA_TABLE_LOADING_RETRY_LIMIT: 5
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]  # Simplified health check
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
       interval: 5s
       timeout: 10s
       retries: 12
@@ -52,8 +49,7 @@ services:
       - rabbitmq_data:/var/lib/rabbitmq
     networks:
       - app-network
-    restart: "no"  # Don't auto-restart in test environment
-    # Reduce resource usage for faster startup
+    restart: "no"
     deploy:
       resources:
         limits:
@@ -70,9 +66,4 @@ volumes:
 networks:
   app-network:
     driver: bridge
-    # Explicit subnet configuration to avoid conflicts
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16
-    # Enable inter-container communication
-    internal: false
+    # Remove hardcoded subnet - let Docker allocate dynamically
