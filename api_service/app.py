@@ -143,12 +143,11 @@ def process_uploaded_file(job_id: str, filename: str, temp_file_path: str, nfs_f
 @app.post("/upload/")
 async def upload_file(file: UploadFile, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     job_id = str(uuid.uuid4())
-    temp_file_path = f"/tmp/temp_{job_id}_{file.filename}"  # Use different temp path
+    temp_file_path = f"/tmp/temp_{job_id}_{file.filename}"
     
     logger.info(f"Processing file upload: {file.filename}, job_id: {job_id}")
     
     try:
-        # Save uploaded file to temp location
         with open(temp_file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         logger.info(f"File saved to temp location: {temp_file_path}")
