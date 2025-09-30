@@ -127,7 +127,6 @@ def process_uploaded_file(job_id: str, filename: str, temp_file_path: str, nfs_f
             
     except Exception as processing_error:
         logger.error(f"Error processing uploaded file: {processing_error}")
-        # Update database status to "error"
         db = next(get_db())
         try:
             file_record = db.query(FileRecord).filter(FileRecord.id == job_id).first()
